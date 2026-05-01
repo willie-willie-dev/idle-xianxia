@@ -1,7 +1,7 @@
 import type { Stats, BattleResult, Monster } from '../types';
 import { rollDrop } from './equipmentSystem';
 
-export function simulateBattle(playerStats: Stats, playerElement: import('../types').WuXing, _playerLevel: number, monster: Monster): BattleResult {
+export function simulateBattle(playerStats: Stats, _playerElement: import('../types').WuXing, _playerLevel: number, monster: Monster): BattleResult {
   let pHp = playerStats.hp;
   const pMp = playerStats.mp;
   let mHp = monster.stats.hp;
