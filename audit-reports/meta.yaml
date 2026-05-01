@@ -1,0 +1,20 @@
+{
+  "schema_version": "1.0",
+  "project": "idle-xianxia",
+  "project_path": "/home/lovecactus/projects/idle-xianxia",
+  "audit_base": "/home/lovecactus/projects/idle-xianxia/audit-reports",
+  "latest": "audit-20260501-074800.md",
+  "reports": [
+    {
+      "id": "audit-20260501-074800",
+      "filename": "audit-20260501-074800.md",
+      "generated_at": "2026-05-01T07:48:00+08:00",
+      "url": "http://localhost:5173/",
+      "page": "首页/属性面板",
+      "status": "PASS",
+      "tool": "playwright-dom-inspect",
+      "summary": "共 17 项检查，状态 PASS",
+      "findings": 17
+    }
+  ]
+}
