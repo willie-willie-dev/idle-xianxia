@@ -143,7 +143,7 @@ export function getTotalEquipmentBonus(equipped: EquippedSlots): Partial<Stats> 
 }
 
 // ============================================================
-// 五、角色最终属性公式（与 01-character-system.md 第二节一致）
+// 五、角色最终属性公式（与 01-角色属性系统.md 第二节一致）
 // ============================================================
 
 export interface RealmConfig {

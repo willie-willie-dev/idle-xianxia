@@ -1,7 +1,7 @@
 /**
  * 功法数据
  *
- * 设计来源：docs/05-zhou-tian-system.md
+ * 设计来源：design-docs/概览设计/05-修炼子系统.md
  *
  * 功法字段：
  * - 基础比例（float）：灵根吸收基础比例
