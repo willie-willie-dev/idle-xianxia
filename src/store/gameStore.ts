@@ -1,13 +1,17 @@
 import { create } from 'zustand';
 import type { Character, EquipBase, EquippedSlots, LogEntry, GameEvent, Skill } from '../types';
+import type { GameTime } from '../types/time';
+import { INITIAL_GAME_TIME, advanceDays, IDLE_TICK_DAYS } from '../types/time';
 import { createInitialCharacter, addExp, calculateFinalStats, canBreakthrough, breakthrough, expToNextLevel } from '../systems/characterSystem';
 import { getTotalEquipmentBonus } from '../systems/equipmentSystem';
+import { absorbSpiritReward, applySpiritAbsorptionFromReward } from '../systems/spiritAbsorption';
 import { simulateBattle } from '../systems/combatSystem';
 import { checkEventTrigger } from '../systems/eventSystem';
+import { ELEMENT_KEYS, SPIRIT_ROOT_LABELS } from '../types/character';
 import { MONSTERS_DATA, IDLE_EXP_PER_TICK, IDLE_GOLD_PER_TICK } from '../data/monsters';
 import { SKILLS_DATA } from '../data/skills';
 
-interface GameState {
+export interface GameState {
   character: Character;
   equipped: EquippedSlots;
   bag: EquipBase[];
@@ -17,6 +21,7 @@ interface GameState {
   logCounter: number;
   currentEvent: GameEvent | null;
   triggeredEvents: Set<string>;
+  gameTime: GameTime;
 
   startIdle: () => void;
   stopIdle: () => void;
@@ -56,6 +61,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   logCounter: 1,
   currentEvent: null,
   triggeredEvents: new Set<string>(),
+  gameTime: { ...INITIAL_GAME_TIME },
 
   addLog: (text, type) => set(s => {
     const id = s.logCounter;
@@ -88,7 +94,8 @@ export const useGameStore = create<GameState>((set, get) => ({
     const s = get();
     const char = addExp(s.character, IDLE_EXP_PER_TICK);
     const gold = char.gold + IDLE_GOLD_PER_TICK;
-    s.addLog(`修炼中…获得 ${IDLE_EXP_PER_TICK} 经验、${IDLE_GOLD_PER_TICK} 金币`, 'idle');
+    const newGameTime = advanceDays(s.gameTime, IDLE_TICK_DAYS);
+    s.addLog(`静坐吐纳…获得 ${IDLE_EXP_PER_TICK} 经验、${IDLE_GOLD_PER_TICK} 金石`, 'reward');
 
     const evt = checkEventTrigger({ ...char, gold }, s.triggeredEvents);
     if (evt) {
@@ -97,7 +104,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       s.addLog(`奇遇触发：${evt.title}`, 'event');
     }
 
-    set({ character: { ...char, gold } });
+    set({ character: { ...char, gold }, gameTime: newGameTime });
   },
 
   doBattle: () => {
@@ -191,6 +198,8 @@ export const useGameStore = create<GameState>((set, get) => ({
     const option = s.currentEvent.options[optionIndex];
     if (!option) return;
 
+    const timeCost = option.timeCost ?? 1;
+    const newGameTime = advanceDays(s.gameTime, timeCost);
     let char = { ...s.character };
     const reward = option.reward;
 
@@ -208,8 +217,29 @@ export const useGameStore = create<GameState>((set, get) => ({
       char.gold += reward.goldBonus;
     }
 
+    // 灵气吸收详细显示
+    if (reward.spiritReward) {
+      const absorbResult = absorbSpiritReward(reward.spiritReward, char);
+      const absorbed = absorbResult.absorbed;
+      const qian = char.spiritRoots['qian'] ?? 0;
+      const kun = char.spiritRoots['kun'] ?? 0;
+
+      for (const k of ELEMENT_KEYS) {
+        const raw = reward.spiritReward[k] ?? 0;
+        const stored = Math.floor(absorbed[k] ?? 0);
+        if (raw > 0 || stored > 0) {
+          const wasted = raw - Math.floor(raw * (1 - kun / 100) * (1 + qian / 100));
+          s.addLog(`  ${SPIRIT_ROOT_LABELS[k]}: +${stored} (原本${raw}, 乾+${qian}%, 坤-${kun}%, 散逸${Math.max(0, wasted)})`, 'reward');
+        }
+      }
+      // 应用灵气吸收
+      const result2 = applySpiritAbsorptionFromReward(char, reward.spiritReward);
+      char = result2.char;
+    }
+
     s.addLog(`📜 ${option.resultText}`, 'event');
-    set({ character: char, currentEvent: null });
+    s.addLog(`⏱ 消耗 ${timeCost} 天`, 'event');
+    set({ character: char, currentEvent: null, gameTime: newGameTime });
 
     if (reward.equipment) {
       set(s => ({ bag: [...s.bag, reward.equipment!] }));

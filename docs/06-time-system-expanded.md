@@ -1,0 +1,309 @@
+# 时间系统 - 详细设计文档
+
+> **来源**：`docs/06-time-system.md`（v1.0）+ `src/types/time.ts` + `src/store/accountStore.ts` + `src/store/gameStore.ts` + `src/screens/GameScreen.tsx`
+> **版本**：v1.1-expanded
+
+---
+
+## 模块总览
+
+时间系统横向贯穿历练、奇遇、挂机、周天等多个子系统，核心职责：
+
+1. 维护游戏内时间（`GameTime`），驱动年号/月份/日期推进
+2. 各操作消耗对应天数，推进游戏时钟
+3. UI 实时显示当前日期
+
+```
+accountStore (主存档)                      gameStore (本地演示)
+├── GameTime 字段 ✓                       ├── GameTime 字段 ✓
+├── resolveEncounterSelect → advanceDays  ├── resolveEvent → advanceDays  ← [BUG: 未调用]
+├── tickIdle → ❌ 不推进时间               ├── tickIdle → advanceDays ✓
+├── resolveEvent → ❌ 不推进时间 ← [BUG]  └── (无历练/周天入口)
+└── 历练/周天/挂机 均走 accountStore
+```
+
+---
+
+## 子模块 1：游戏时间模型
+
+### 设计规格
+
+| 项目 | 值 |
+|------|----|
+| 纪元元年 | 2016 年 = 纪元 1 年 |
+| 纪元年计算 | `epochYear + 2015 = 实际年份` |
+| 初始值 | `epochYear: 1, month: 1, day: 1` |
+| 闰年规则 | 四年一闰，百年不闰，四百年又闰 |
+| 平年天数 | 365 天 |
+| 闰年天数 | 366 天 |
+
+### 数据结构
+
+```typescript
+// src/types/time.ts
+interface GameTime {
+  epochYear: number;  // 纪元年（2016年 = 1）
+  month: number;       // 1–12
+  day: number;        // 1–31（按月份）
+}
+
+export const EPOCH_START_YEAR = 2016;
+export const ZHOU_TIAN_DAYS = 7;       // 周天运转固定消耗
+export const IDLE_TICK_DAYS = 1;        // 挂机 tick 推进天数
+export const INITIAL_GAME_TIME = { epochYear: 1, month: 1, day: 1 };
+```
+
+### 计算公式
+
+```typescript
+// 闰年判断
+function isLeapYear(epochYear: number): boolean {
+  const actualYear = epochYear + EPOCH_START_YEAR - 1;
+  return (actualYear % 4 === 0 && actualYear % 100 !== 0) || (actualYear % 400 === 0);
+}
+
+// 月份天数
+function getDaysInMonth(epochYear: number, month: number): number {
+  if (month === 2) return isLeapYear(epochYear) ? 29 : 28;
+  return { 1:31, 3:31, 4:30, 5:31, 6:30, 7:31, 8:31, 9:30, 10:31, 11:30, 12:31 }[month] ?? 30;
+}
+
+// 时间推进
+function advanceDays(time: GameTime, days: number): GameTime {
+  let { epochYear, month, day } = time;
+  day += days;
+  while (day > getDaysInMonth(epochYear, month)) {
+    day -= getDaysInMonth(epochYear, month);
+    month++;
+    if (month > 12) { month = 1; epochYear++; }
+  }
+  return { epochYear, month, day };
+}
+
+// 格式化显示
+function formatGameTime(time: GameTime): string {
+  const actualYear = time.epochYear + EPOCH_START_YEAR - 1;
+  return `纪元${actualYear}年${time.month}月${time.day}日`;
+}
+```
+
+### 当前实现状态
+
+| 部分 | 状态 | 位置 |
+|------|------|------|
+| `GameTime` 类型定义 | ✅ 已实现 | `src/types/time.ts` |
+| `isLeapYear` | ✅ 已实现 | `src/types/time.ts` |
+| `getDaysInMonth` | ✅ 已实现 | `src/types/time.ts` |
+| `advanceDays` | ✅ 已实现 | `src/types/time.ts` |
+| `formatGameTime` | ✅ 已实现 | `src/types/time.ts` |
+| `INITIAL_GAME_TIME` | ✅ 已实现 | `src/types/time.ts` |
+| `ZHOU_TIAN_DAYS` 常量 | ✅ 已定义（未使用） | `src/types/time.ts` |
+
+### 待开发事项
+
+- `ZHOU_TIAN_DAYS` 在 `accountStore.runZhouTian` 中被引用（接口存在），但 `runZhouTian` 方法本身**尚未实现**
+- `gameTime` 存档序列化字段已在 `SavedGameState` 中存在，持久化正常
+
+---
+
+## 子模块 2：时间推进机制
+
+### 历练（遭遇选择）
+
+历练入口在 `GameScreen`，点击"⚔ 历练"后弹出遭遇选择（`showEncounterSelect`），用户选择后调用 `resolveEncounterSelect`。
+
+**时间推进**：`resolveEncounterSelect` 在 `accountStore` 中执行：
+
+```typescript
+// accountStore.ts line 635
+const timeCost = encounter === 'absorb' ? 7 : encounter === 'wonder' ? 10 : 7;
+gs.gameTime = advanceDays(gs.gameTime, timeCost);
+```
+
+| 遭遇类型 | 时间消耗 |
+|----------|----------|
+| `absorb`（吸收） | 7 天 |
+| `wonder`（奇遇） | 10 天 |
+| `battle`（战斗） | 7 天 |
+
+### 事件选项（EventOption.timeCost）
+
+`EventScreen` 中玩家选择事件选项后，`resolveEvent` 被调用。
+
+**⚠️ 当前状态（BUG）**：`accountStore.resolveEvent`（line 468–509）**未推进 gameTime**。
+
+```typescript
+// accountStore.ts resolveEvent - 缺少时间推进
+resolveEvent: (optionIndex) => {
+  // ... 奖励应用 ...
+  gs.currentEvent = null;
+  if (reward.equipment) { gs.bag = [...gs.bag, reward.equipment]; }
+  setStorageGameState(id, gs);
+  // ❌ 缺失：gs.gameTime = advanceDays(gs.gameTime, timeCost);
+},
+```
+
+作为对比，`gameStore.resolveEvent`（演示用）**正确实现了**时间推进（line 202）：
+
+```typescript
+const timeCost = option.timeCost ?? 1;
+const newGameTime = advanceDays(s.gameTime, timeCost);
+// ...
+set({ character: char, currentEvent: null, gameTime: newGameTime });
+```
+
+**修复方案**：在 `accountStore.resolveEvent` 的 `setStorageGameState` 之前增加：
+
+```typescript
+const timeCost = option.timeCost ?? 1;
+gs.gameTime = advanceDays(gs.gameTime, timeCost);
+get().addLog(`⏱ 消耗 ${timeCost} 天`, 'event');
+```
+
+### 周天运转
+
+**状态：未实现**。界面注释（GameScreen.tsx line 297）：
+
+```tsx
+{/* 旧周天按钮已移除，等新功法系统设计后填充 */}
+```
+
+`ZHOU_TIAN_DAYS = 7` 常量已定义在 `time.ts`，但 `accountStore` 中不存在 `runZhouTian` 方法（接口定义在 `GameState`，未实现）。
+
+---
+
+## 子模块 3：挂机 Tick
+
+### accountStore（主流程）
+
+`tickIdle`（line 364）**不推进 gameTime**：
+
+```typescript
+tickIdle: () => {
+  // ... 经验/金币/事件触发 ...
+  // ❌ gs.gameTime 未推进
+  setStorageGameState(id, gs);
+},
+```
+
+### gameStore（本地演示）
+
+`tickIdle`（gameStore.ts line 97）**正确推进 gameTime**：
+
+```typescript
+tickIdle: () => {
+  const newGameTime = advanceDays(s.gameTime, IDLE_TICK_DAYS);
+  // ...
+  set({ character: { ...char, gold }, gameTime: newGameTime });
+},
+```
+
+### 修复方案
+
+在 `accountStore.tickIdle` 中，`setStorageGameState` 之前增加：
+
+```typescript
+gs.gameTime = advanceDays(gs.gameTime, IDLE_TICK_DAYS);
+```
+
+---
+
+## 子模块 4：时间与 UI 展示
+
+### 顶栏时间显示
+
+`GameScreen.tsx`（line 264）从 `gameState.gameTime` 读取并格式化：
+
+```tsx
+<div style={{ fontSize: '0.72rem', color: 'var(--muted)', letterSpacing: '0.04em' }}>
+  {formatGameTime(gs.gameTime ?? INITIAL_GAME_TIME)}
+</div>
+```
+
+显示位置在游戏顶栏，境界信息下方。
+
+### 格式化规则
+
+```typescript
+// 例：纪元1年1月1日、纪元9年3月15日、纪元15年12月31日
+formatGameTime(time) → `纪元${actualYear}年${month}月${day}日`
+```
+
+注意：`formatGameTime` 内部将 `epochYear` 转换回实际年份（`epochYear + 2015`）显示，符合文档设计。
+
+---
+
+## 子模块 5：时间与系统交互
+
+### 依赖时间的系统
+
+| 系统 | 依赖方式 | 状态 |
+|------|----------|------|
+| 历练遭遇 | 消耗固定天数（7/10天）推进 | ✅ `resolveEncounterSelect` |
+| 奇遇事件 | 选项 `timeCost` 推进 | ⚠️ `resolveEvent` BUG |
+| 挂机 | 每 tick 推进 1 天 | ⚠️ `tickIdle` BUG |
+| 周天运转 | 每次消耗 7 天 | ❌ 未实现 |
+| 事件触发 | 时间推进后检查触发 | ✅ `checkEventTrigger` |
+
+### 存档字段
+
+```typescript
+// SavedGameState 中的 gameTime 字段（line 185）
+gameTime: { ...INITIAL_GAME_TIME },
+
+// 加载时（line 106）
+gameTime: sgs.gameTime ?? { ...INITIAL_GAME_TIME },
+```
+
+`gameTime` 随存档持久化，加载时若无字段则使用初始值。
+
+---
+
+## 模块间依赖关系
+
+```
+GameTime（类型 + advanceDays + formatGameTime）
+    │
+    ├── accountStore.ts（主流程）
+    │   ├── gameTime 字段定义（line 135）
+    │   ├── createStarterGameState 初始化（line 185）
+    │   ├── toGameState 加载（line 106）
+    │   ├── resolveEncounterSelect → advanceDays ✓（line 635）
+    │   ├── resolveEvent → ❌ 缺失 advanceDays ⚠️
+    │   ├── tickIdle → ❌ 缺失 advanceDays ⚠️
+    │   └── （周天 → 未实现）
+    │
+    ├── gameStore.ts（本地演示）
+    │   ├── tickIdle → advanceDays ✓（line 97）
+    │   └── resolveEvent → advanceDays ✓（line 202）
+    │
+    └── GameScreen.tsx（UI）
+        └── formatGameTime(gs.gameTime) ✓（line 264）
+```
+
+---
+
+## 优先级排序
+
+| 优先级 | 事项 | 原因 |
+|--------|------|------|
+| **P0** | 修复 `accountStore.resolveEvent` 不推进 gameTime | 事件选项时间消耗不生效 |
+| **P0** | 修复 `accountStore.tickIdle` 不推进 gameTime | 挂机时间不推进 |
+| **P1** | 实现 `accountStore.runZhouTian`（周天7天消耗） | 文档已有设计，常量已定义 |
+| **P2** | UI 增加"⏱ 消耗 N 天"日志（resolveEvent 日志） | 用户感知时间流逝 |
+| **P2** | `gameTime` 顶栏显示优化（可读性、格式一致性） | 当前显示字号偏小 |
+| **P3** | 事件触发时机细化（按月/年触发特殊事件） | 未来扩展 |
+
+---
+
+## 附录：代码对照表
+
+| 文档章节 | 设计位置 | 实际代码位置 |
+|----------|----------|--------------|
+| 游戏时间模型 | 06-time-system.md §2 | `src/types/time.ts` |
+| 闰年算法 | 06-time-system.md §3 | `src/types/time.ts` |
+| 事件时间消耗 | 06-time-system.md §4 | ⚠️ `accountStore.resolveEvent` BUG |
+| 周天时间 | 06-time-system.md §5 | ❌ 未实现 |
+| Idle tick | 06-time-system.md §6.2 | ⚠️ `accountStore.tickIdle` BUG |
+| UI显示 | 06-time-system.md §7 | `GameScreen.tsx:264` |
+| 存档 | 06-time-system.md §11 | `accountStore.ts` |

@@ -1,0 +1,377 @@
+# 奇遇生成器框架
+
+> 版本：v0.6
+> 状态：框架设计
+> 关联项目：登仙 Idle Xianxia
+> 依赖：08-event-dimension-framework.md（五行性格 + 关系维度）
+> 目标：定义生成器的输入/输出/规则，使后期可批量生成奇遇事件
+
+## 更新记录（v0.2）
+
+- 新增第四章第五节：五行性格初始化逻辑
+- 确认五行性格（10维）与修为灵根（WuXing）为两套独立系统
+- 明确初始化的设计原则：修为灵根作为五行性格的锚点，后续由事件持续修正
+- 偏移幅度统一为 ±1，后期平衡测试时调校
+
+## 更新记录（v0.3）
+
+- 新增第五章第六节：场景的本质（场景即约束）
+- 明确场景设计哲学：场景是事件的逻辑约束层，而非独立内容单元
+
+## 更新记录（v0.5）
+
+- 第四章 4.5 节偏移映射表降级为参考样例
+- 新增「性格偏移接口」节：明确定义 `dimension` + `value` 接口格式
+- 明确性格偏移由事件模板自行定义，框架仅提供接口规范
+
+## 更新记录（v0.6）
+
+- 第四章 4.3 节更新：初始化逻辑在角色系统执行，框架不定义算法
+- 第四章 4.4 节修正机制更新：移除对 4.5 节映射表的硬引用，改为读取选项的 `temperamentShift` 字段
+
+---
+
+## 一、核心定位
+
+奇遇生成器是一个**事件模板生成系统**。给定场景类型 + 角色当前状态，生成完整的奇遇事件结构（描述、选项、奖励、性格偏移）。
+
+不是写死模板，而是**可组合的流水线**。
+
+---
+
+## 二、生成器输入（Inputs）
+
+```typescript
+interface GeneratorContext {
+  // 角色状态
+  realm: Realm;                    // 当前境界
+  stats: Stats;                    // 六维属性
+  fiveElements: FiveElements;      // 五行性格值（10维）
+  triggeredEvents: Set<string>;    // 已触发事件ID（用于去重）
+
+  // 场景上下文
+  locationType: LocationType;      // 当前位置类型
+  recentEventTypes: EventType[];   // 最近3个事件类型（避免重复）
+
+  // 生成参数
+  targetEventType: EventType;      // 目标事件类型
+  difficulty: 'easy' | 'medium' | 'hard';
+}
+```
+
+### 位置类型（`LocationType`）
+
+| 值 | 场景 |
+|---|------|
+| `wild` | 野外 |
+| `cave` | 洞穴/洞府 |
+| `secret_realm` | 秘境 |
+| `sect` | 宗门 |
+| `city` | 坊市/城镇 |
+| `battlefield` | 战场 |
+| `divine_land` | 神迹/灵地 |
+
+### 事件类型（`EventType`）
+
+继承现有：`奇遇` | `机缘` | `抉择` | `危机`
+
+---
+
+## 三、生成器输出（Outputs）
+
+```typescript
+interface GeneratedEvent {
+  id: string;                      // 唯一标识，格式：gen_{type}_{timestamp}
+  title: string;
+  description: string;
+  type: EventType;
+  realmRange: [Realm, Realm];
+
+  options: GeneratedOption[];
+
+  // 元数据
+  tags: string[];                  // 场景标签，用于过滤
+  weight: number;                  // 出现权重
+  oneTime: boolean;
+}
+
+interface GeneratedOption {
+  text: string;                    // 选项描述
+  resultText: string;              // 结果描述
+  riskLevel: RiskLevel;            // 风险等级
+
+  reward: EventReward;             // 奖励（灵气/属性/经验/金币/物品）
+  temperamentShift: TemperamentShift[];  // 性格偏移
+  relationChanges?: RelationChange[];    // 关系变化
+
+  // 条件
+  condition?: {
+    realm?: Realm;
+    statReq?: Partial<Stats>;
+    temperamentReq?: Partial<FiveElements>;  // 性格门槛（可选）
+  };
+}
+```
+
+### 风险等级（`RiskLevel`）
+
+| 等级 | 标签 | 含义 |
+|------|------|------|
+| 0 | 零 | 无任何风险，零收益或极低 |
+| 1 | 低 | 低风险，低~中收益 |
+| 2 | 中 | 中风险，中收益 |
+| 3 | 高 | 高风险，高收益 |
+| 4 | 极高 | 极高风险，可能有负面后果 |
+
+---
+
+## 四、五行性格偏移系统
+
+### 4.1 五行性格结构（10维）
+
+每个五行方向有**阳**和**阴**两个独立数值，范围 0~100：
+
+| 维度 | 阳面（yang）| 阴面（yin）|
+|------|------------|------------|
+| 火 | 热血（主动、热情）| 贪婪（索取、占有）|
+| 水 | 包容（温和、开放）| 纵欲（放纵、沉溺）|
+| 木 | 传承（给予、培育）| 掌控（控制、支配）|
+| 金 | 刚毅（坚定、独立）| 冷酷（冷漠、残忍）|
+| 土 | 厚德（牺牲、给予）| 吝啬（自私、占有）|
+
+### 4.2 与修为灵根（WuXing）的关系
+
+**两套独立系统，无直接绑定。**
+
+- **修为灵根（WuXing）**：`character.element`，取值范围为 `fire | water | wood | metal | earth`，定义角色的五行主灵根
+- **五行性格（FiveElements）**：10维数值体系，定义角色在后天行事中的偏好与倾向
+
+两者的关系为：**修为灵根作为五行性格的初始锚点，五行性格在后续游戏中由事件选项持续修正，修正结果不受修为灵根约束**
+
+### 4.3 五行性格初始化
+
+**初始化逻辑在角色系统执行，框架文档只描述输入接口，不定义初始化算法。**
+
+角色系统负责根据角色的修为灵根（`character.element`）生成 `FiveElements` 初始值，并将该字段写入 `Character` 对象。生成器只读取该字段，不负责计算。
+
+框架要求的 `GeneratorContext.fiveElements` 字段在角色创建时由角色系统写入，后续游戏中由事件选项结算持续修改。
+
+### 4.4 后续修正机制
+
+角色创建后，五行性格完全由事件选项结算驱动修正，修为灵根不再影响性格数值。
+
+每次事件选项结算时：
+1. 根据选项的 `temperamentShift` 字段应用偏移
+2. 将偏移量叠加到对应的五行性格维度上
+3. 数值下限 0，上限不封顶（超过 100 继续增长）
+4. 无衰减机制（性格一旦形成不回落）
+
+### 4.5 性格偏移接口（由事件模板定义）
+
+性格偏移由事件模板自行定义，框架只提供接口规范。
+
+#### 接口格式
+
+每个选项的 `temperamentShift` 字段格式如下：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `dimension` | `FiveElementsDimension` | 偏移的五行维度，如 `fire.yang`、`water.yin` |
+| `value` | `number` | 偏移量，范围 ±1（正为阳面增加，负为阴面增加）|
+
+#### 可用维度一览
+
+| dimension 值 | 对应阴阳 | 说明 |
+|-------------|---------|------|
+| `fire.yang` | 火·阳 | 热血 |
+| `fire.yin` | 火·阴 | 贪婪 |
+| `water.yang` | 水·阳 | 包容 |
+| `water.yin` | 水·阴 | 纵欲 |
+| `wood.yang` | 木·阳 | 传承 |
+| `wood.yin` | 木·阴 | 掌控 |
+| `metal.yang` | 金·阳 | 刚毅 |
+| `metal.yin` | 金·阴 | 冷酷 |
+| `earth.yang` | 土·阳 | 厚德 |
+| `earth.yin` | 土·阴 | 吝啬 |
+
+#### 参考样例（供事件模板设计时参考）
+
+> 以下为样例，非强制规范。实际偏移由事件模板自身定义。
+
+| 行为类别 | 行为 | 性格偏移（参考）|
+|---------|------|----------------|
+| 奇遇 | 深入探索 | `fire.yang +1`，`metal.yin +1` |
+| 奇遇 | 外围搜索 | `earth.yang +1` |
+| 奇遇 | 分享给同道 | `earth.yang +1`，`wood.yang +1`，`water.yang +1` |
+| 奇遇 | 悄然离开 | `water.yang +1`，`earth.yin +1` |
+| 奇遇 | 独占修炼 | `fire.yin +1`，`earth.yin +1` |
+| 奇遇 | 共同修炼 | `water.yang +1`，`wood.yang +1` |
+| 战斗 | 正面迎战 | `fire.yang +1`，`metal.yin +1` |
+| 战斗 | 保护队友 | `fire.yang +1`，`water.yang +1` |
+| 战斗 | 独自突进 | `fire.yin +1`，`metal.yin +1` |
+| 战斗 | 留有余地 | `earth.yang +1`，`water.yang +1` |
+| 战斗 | 抢夺战利品 | `fire.yin +1`，`metal.yin +1` |
+| 战斗 | 让给对方 | `earth.yang +1`，`wood.yang +1` |
+| 战斗 | 追击 | `fire.yang +1`，`metal.yin +1` |
+| 战斗 | 放走 | `water.yang +1`，`earth.yang +1` |
+| 人际 | 主动赠送资源 | `wood.yang +1`，`earth.yang +1` |
+| 人际 | 主动帮忙 | `fire.yang +1`，`earth.yang +1` |
+| 人际 | 主动亲近 | `fire.yang +1`，`water.yang +1` |
+| 人际 | 拒绝互动 | `metal.yin +1`，`water.yin -1` |
+| 人际 | 言语冷淡 | `metal.yin +1`，`water.yin -1`，`earth.yang -1` |
+| 人际 | 主动伤害 | `fire.yin +1`，`metal.yin +1` |
+| 人际 | 落井下石 | `fire.yin +1`，`metal.yin +1` |
+| 人际 | 暗中破坏 | `metal.yin +1`，`wood.yin +1` |
+| 人际 | 屈服顺从 | `water.yang +1`，`earth.yang +1` |
+| 人际 | 避免冲突 | `water.yang +1`，`earth.yang +1` |
+| 人际 | 保命优先 | `earth.yang +1` |
+| 人际 | 接受教导 | `wood.yang +1` |
+| 人际 | 遵循意愿 | `metal.yang +1`，`earth.yang +1` |
+| 人际 | 维护地位 | `metal.yang +1` |
+| 人际 | 主动表现 | `fire.yang +1`，`metal.yang +1` |
+| 人际 | 证明价值 | `metal.yang +1` |
+| 人际 | 争取机会 | `fire.yang +1`，`metal.yang +1` |
+
+---
+
+## 五、场景组件库（可组合）
+
+生成器使用组件库组合生成事件描述和选项。
+
+### 5.1 场景的本质：约束而非内容
+
+**场景是事件的约束层，不是独立的内容单元。**
+
+场景本身没有独立意义，它的作用是为事件提供逻辑约束，让事件在物理背景、时机、参与者上显得自洽。约束越自洽，事件越真实。
+
+**三类约束：**
+
+| 约束维度 | 内容 | 举例 |
+|---------|------|------|
+| 位置约束 | 事件必须发生在某类场景 | 必须在宗门内、必须在洞府 |
+| 时间约束 | 事件必须发生在特定时机 | 突破时、历练中、深夜 |
+| 参与者约束 | 事件必须有特定的在场者 | 师兄在场、外来修士路过 |
+
+**约束的自洽原则：**
+
+- 约束之间不得冲突。冲突的约束会让事件荒谬，损害真实感。
+- 示例：❌「在洞府内遇到街头卖艺的凡人」→ 地点和参与者矛盾
+- 示例：❌「在战场废墟里单独存在完好无损的法器」→ 背景和物品状态矛盾
+- 示例：✅「在宗门内师兄赠予修炼心得」→ 地点和人物关系自洽
+
+**场景模板在生成器中的角色：**
+
+场景模板定义一组自洽的约束组合（位置类型 + 关键词 + 描述模板），生成器根据当前 context 匹配最合适的模板，再组装事件选项。场景约束不决定事件结果，只决定事件是否在逻辑上成立。
+
+### 5.2 场景模板
+
+```typescript
+interface SceneTemplate {
+  id: string;
+  locationType: LocationType[];
+  keywords: string[];              // 匹配关键词
+  description: string;             // 描述模板，支持变量插值
+  optionSets: OptionSet[];         // 可选选项组合
+}
+
+// 示例
+const SCENE_TEMPLATES: SceneTemplate[] = [
+  {
+    id: 'cave_discovery',
+    locationType: ['cave', 'wild'],
+    keywords: ['洞府', '洞穴', '古墓'],
+    description: '前方发现一处前人遗留的{placeType}，内有微弱灵光透出。',
+    optionSets: [
+      {
+        riskLevel: 3,
+        options: [
+          { text: '深入{placeType}探索', temperamentShifts: [...], reward: {...} },
+          { text: '外围搜索', temperamentShifts: [...], reward: {...} },
+          { text: '分享给同道', temperamentShifts: [...], reward: {...} },
+          { text: '悄然离开', temperamentShifts: [...], reward: {...} },
+        ]
+      }
+    ]
+  }
+];
+```
+
+### 5.3 奖励组件
+
+```typescript
+interface RewardComponent {
+  spiritTypes: (keyof SpiritReward)[];  // 灵气类型组合
+  baseRange: [number, number];           // 基础范围 [min, max]
+  scalingByRealm: Record<Realm, [number, number]>;  // 随境界缩放
+}
+
+// 示例
+const REWARD_COMPONENTS: Record<RiskLevel, RewardComponent> = {
+  0: { spiritTypes: ['wood'], baseRange: [3, 8], scalingByRealm: {...} },
+  1: { spiritTypes: ['water', 'earth'], baseRange: [8, 15], scalingByRealm: {...} },
+  2: { spiritTypes: ['fire', 'metal'], baseRange: [10, 20], scalingByRealm: {...} },
+  3: { spiritTypes: ['fire', 'kun'], baseRange: [15, 30], scalingByRealm: {...} },
+  4: { spiritTypes: ['qian', 'kun'], baseRange: [20, 40], scalingByRealm: {...} },
+};
+```
+
+---
+
+## 六、生成流水线
+
+```
+输入 Context
+    │
+    ▼
+┌─────────────────┐
+│ 1. 场景选择      │ ← 根据 locationType + recentEventTypes 从组件库筛选场景模板
+└────────┬────────┘
+    │
+    ▼
+┌─────────────────┐
+│ 2. 选项组装      │ ← 根据事件类型 + 风险等级组装选项（4选1 或 2选1）
+└────────┬────────┘
+    │
+    ▼
+┌─────────────────┐
+│ 3. 奖励生成      │ ← 根据 riskLevel + realm 查 REWARD_COMPONENTS 生成灵气数值
+└────────┬────────┘
+    │
+    ▼
+┌─────────────────┐
+│ 4. 性格偏移写入  │ ← 从选项的 temperamentShift 字段读取偏移值 |
+└────────┬────────┘
+    │
+    ▼
+┌─────────────────┐
+│ 5. 唯一ID + 去重 │ ← 生成 gen_{type}_{timestamp}，检查 triggeredEvents
+└────────┬────────┘
+    │
+    ▼
+  GeneratedEvent
+```
+
+---
+
+## 七、后期扩展方向
+
+- [ ] **性格影响触发权重**：热血角色更容易触发战斗类奇遇，包容角色更容易触发人际类
+- [ ] **选项隐藏/解锁**：基于性格门槛解锁特定选项
+- [ ] **事件链衔接**：`followUpEventId` 串联生成多个相关事件
+- [ ] **关系变化可视化**：人际关系变化写入角色档案
+- [ ] **AI 辅助生成**：描述字段可交由 LLM 扩展，框架保证结构一致性
+
+---
+
+## 八、关联文件
+
+| 文件 | 作用 |
+|------|------|
+| `08-event-dimension-framework.md` | 五行性格体系 + 关系维度（上游） |
+| `src/types/event.ts` | 事件类型定义 |
+| `src/data/events.ts` | 现有事件数据 |
+| `src/systems/eventGenerator.ts` | 生成器实现（待建） |
+
+---
+
+_文档版本：v0.6 | 框架设计阶段_

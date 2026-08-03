@@ -1,0 +1,241 @@
+# 登仙项目（idle-xianxia）现状梳理
+
+> 项目路径：`/home/lovecactus/projects/idle-xianxia`
+> 整理时间：2026-06-02
+> 整理依据：docs/ 下全部设计文档 + src/ 全量源码
+
+---
+
+## 一、项目概览
+
+| 项目 | 内容 |
+|------|------|
+| **项目名称** | 登仙（idle-xianxia） |
+| **类型** | 修仙挂机页游原型 |
+| **前端框架** | React 19 + Vite 8 + TypeScript 6 |
+| **状态管理** | Zustand 5（双 Store：accountStore 主链路 + gameStore 遗留） |
+| **动画** | framer-motion 12 |
+| **构建端口** | dev: 30200 |
+| **持久化** | localStorage（key: `idle_xianxia_accounts`，最多 3 角色） |
+
+**核心玩法概述**：玩家创建七灵根角色，通过「历练」（吸纳/奇遇/争斗）吸收灵气晋升小境界→大境界，搭配装备强化与随机事件，构成挂机-成长循环。
+
+---
+
+## 二、设计文档清单
+
+| 文档 | 状态 | 核心内容概要 |
+|------|------|-------------|
+| `SPEC.md` | ✅ 已落地 | 角色纸面模板 V1.1：七灵根 100% 分配、七种灵气独立上限表（练气100/筑基300/金丹900/元婴2700/化神8100）、境界突破条件（小境界需七系满、大境界需物品+灵气）、物品系统占位 |
+| `01-character-system.md` | ✅ 已落地 | 六项属性三层合成公式（基础+等级×成长、境界倍率×五行倍率+装备/技能/事件加成）、境界5阶倍率表、五行成长倍率、升级经验 `level²×10` |
+| `02-equipment-system.md` | ⚠️ 部分落地 | 五槽位（武器/护甲/饰品×2/法宝）、六品质、强化公式（基础×1+0.1×等级）、affix不参与强化、雷神套装效果未接入结算、掉落 rollDrop 逻辑 |
+| `03-skill-system.md` | ⚠️ 部分落地 | 技能三类（主动/被动/天赋）、Skill数据结构、被动/天赋写入面板；主动技能CD/MP/战斗释放未实现，无UI入口 |
+| `04-event-system.md` | ⚠️ 部分落地（3/6） | 挂机tick与战斗后 checkEventTrigger 触发随机事件；EventReward含属性/经验/金币/装备；文档记载6条事件，**当前代码仅3条**（灵泉洗礼/灵气浓郁/灵气贫瘠）；`followUpEventId` 预留未实现 |
+| `05-zhou-tian-system.md` | ❌ 未落地 | 五功法槽（角亢/井鬼/紫薇/奎娄/斗牛），仅紫薇位生效；功法含吸收比例+固定开销（灵根种类+数值）；反噬预留；四象槽位预留；状态：待设计师确认 |
+| `06-time-system.md` | ⚠️ 部分落地 | GameTime（纪元年/月/日）、闰年算法、月份天数、`advanceDays`；历练/周天各操作消耗不同天数；顶栏显示游戏时间；**gameTime 在 accountStore 主链路中未随操作推进** |
+| `07-navigation-framework.md` | ✅ 已落地 | AppScreen 枚举 + Zustand 导航；5个全屏页（entry/create/game/event/character）；指出 CharacterScreen 与 gameStore 数据不一致技术债 |
+| `ACCOUNT_SYSTEM.md` | ✅ 已落地 | 多角色（≤3）、localStorage持久化、Entry/Create/Game流程、五行创角加成表；五行属性选择未做（创角固定为metal） |
+| `灵气吸收规则v2.0.md` | ✅ 已落地 | 历练灵气吸收核心规则：五行灵根仅吸对应属性、乾×1.5/坤×0.1、按比例直接分配；UI需展示来源/明细/时间消耗/吸收后状态 |
+| `EVENT_TEMPLATES.md` | 📋 策划文档 | 事件链策划指南（奇遇/机缘/抉择/危机/战斗）；状态：等待设计师填充 |
+| `opportunity_templates.md` | 📋 策划文档 | 5个机缘YAML模板（灵草奇遇/古墓探险等）；与TS事件表无自动对应 |
+| `页面切换动画框架设计.md` | ❌ 未落地 | 全局 PageTransitionProvider + 云朵/灵气雾效overlay；所有页面 blur→fade切换；状态：待审批，未实现 |
+| `DESIGN_UI_TEST_CHECKLIST.md` | ✅ 已落地 | 设计文档↔代码↔手工测试清单；标注各模块对齐状态（✅/⚠️/❌），是项目现状最佳对照表 |
+
+---
+
+## 三、已实现功能清单
+
+### 3.1 账号与导航
+- EntryScreen：角色卡片列表（名/属性/创建日期）、点击进入、🗑️二次确认删除、≤3角色限制
+- CharacterCreate：2-8中文名、七灵根滑条（5%步进/坤自动100-其他）、随机名/随机灵根、性别选择
+- AppScreen 导航（entry/create/game/event/character） + accountStore screen 状态
+- localStorage 持久化（idle_xianxia_accounts）
+
+### 3.2 角色属性系统
+- `createInitialCharacter` + `calculateFinalStats`：三层公式（基础+等级×成长、境界倍率、五行倍率、装备/技能/事件加成）
+- 六项属性（hp/mp/atk/def/spd/wil）
+- 境界5阶（炼气→筑基→金丹→元婴→化神）+ 小境界三阶段
+- 道种进度与灵气槽上限（按境界比例）
+- 灵根饼图 + 灵气条 UI（CharacterPanel）
+
+### 3.3 历练与灵气吸收
+- EncounterSelectModal：吸纳/奇遇/争斗选择（第4项"危机四伏"占位）
+- EventScreen：历练演出页（framer-motion入场）+ 灵气吸收明细UI
+- `applySpiritAbsorption`（v2.0规则：五行灵根仅吸对应属性、乾×1.5、坤×0.1）
+- `executeEncounter` → 写档 + 游戏时间推进（7/10/7天）
+- 随机事件触发（`checkEventTrigger`）+ `resolveEvent`（属性/经验/金币/装备奖励）
+
+### 3.4 装备与行囊
+- 五槽穿戴（武器/护甲/饰品×2/法宝）
+- 六品质（颜色区分）+ `getEnhancedStats` 强化计算
+- `rollDrop` 掉落逻辑
+- CharacterScreen：`components/EquipmentBag.tsx`（已接props版）
+- GameScreen：内嵌简化行囊列表
+
+### 3.5 技能（数据层）
+- 6个技能（火球术/御剑术/铁壁/灵识/剑心/天生神力）数据定义
+- 被动/天赋效果写入 `getFinalStats` 面板加成
+
+### 3.6 战斗系统（逻辑层）
+- `simulateBattle`：回合制ATK/DEF互殴、35%装备掉落
+- `doBattle` in gameStore
+
+### 3.7 功法系统（UI层）
+- TechniquePanel：五槽功法栏（角亢/井鬼/紫薇/奎娄/斗牛）
+- 紫薇详情弹窗
+- 奇遇掉落学功法 + `learnTechnique`
+
+### 3.8 数据骨架
+- 境界配置（realms.ts）
+- 装备/技能/怪物/事件/历练/功法数据文件
+- 完整 TypeScript 类型定义（character/account/equipment/skill/combat/event/technique/time/history/spirit）
+
+---
+
+## 四、未实现 / 半成品功能
+
+### ❌ 完全未实现
+
+| 功能 | 来源文档 | 说明 |
+|------|----------|------|
+| **全局页面转场动画**（PageTransitionProvider） | 页面切换动画框架设计.md | 仅 EventScreen 有 framer-motion 入场动效 |
+| **套装效果结算**（雷神2/4件） | 02-equipment-system.md | 套装数据存在，结算逻辑未接入 |
+| **主动技能战斗释放**、Buff回合 | 03-skill-system.md | 技能数据完整，但无UI入口，combatSystem 未驱动 |
+| **危机四伏历练类型** | encounters.ts | 第4项占位，无完整逻辑 |
+| **事件链**（followUpEventId） | 04-event-system.md | 预留字段未使用，事件仅3条 |
+| **周天运转入口**（RefineModal + doRefineSpirit） | 05-zhou-tian-system.md | Modal存在且有 `doRefineSpirit`，但 GameScreen 中按钮已注释 |
+| **紫薇周天运转完整闭环**（开销→道种提炼→7天/次） | 05+06 | 数据存在，无游戏内触发入口 |
+| **反噬机制** | 05-zhou-tian-system.md | 预留字段未实现 |
+| **四象槽位**（角亢/井鬼/奎娄/斗牛） | 05-zhou-tian-system.md | 全部占位，无设计 |
+| **七系灵气独立存储**（乾/坤也存灵气） | SPEC.md | 代码仅存五行灵气，乾坤灵气为0 |
+| **大境界突破物品消耗**（筑基丹等） | SPEC.md、01-character-system.md | 大境界突破按钮在，但突破不消耗任何物品 |
+| **旧存档迁移** | ACCOUNT_SYSTEM.md | 无迁移逻辑 |
+| **Playwright E2E 测试** | package.json | playwright 已安装，无测试脚本/用例 |
+| **五行属性选择创角** | ACCOUNT_SYSTEM.md | 创角固定 metal，无法选择其他五行 |
+
+### ⚠️ 半成品 / 有偏差
+
+| 功能域 | 已实现 | 缺失/偏差 |
+|--------|--------|-----------|
+| **事件系统** | 3条带灵气奖励的事件 | 文档6条未全部迁入；`resolveEvent`不推进gameTime；选项condition未校验；GameScreen内联Modal不显示timeCost |
+| **灵气吸收双轨** | 历练用v2.0；事件用`spiritAbsorption.ts`旧公式 | 两套规则不一致；EventScreen结算展示与`executeEncounter`二次随机（显示与存档可能不符） |
+| **gameTime推进** | types/time.ts + 格式化函数 | `accountStore`主链路中gameTime未随历练推进；挂机tick有advanceDays但主流程不调用 |
+| **境界突破** | 小境界（五系满晋升）、大境界（道种满按钮） | 大境界突破不消耗丹药；旧`breakthrough`（等级突破）与新体系并存 |
+| **装备强化费用** | 强化逻辑存在 | `enhanceItem`扣费未乘品质系数，与文档公式不符 |
+| **CharacterScreen行囊** | `components/EquipmentBag.tsx`引用 | 该组件不接受bag props，实际仍读gameStore，与多角色存档易不一致 |
+| **SkillPanel** | 组件存在 | 未挂载到任何Screen；gameStore引用，与主流程分离 |
+| **EquipmentPanel/BattleLog** | 组件存在 | 未挂载 |
+| **history记录** | 类型+存档字段 | 无任何写入逻辑 |
+
+---
+
+## 五、技术架构
+
+### 5.1 技术栈
+
+```
+框架:      React 19.2.4 + Vite 8.0.4
+状态管理:  Zustand 5.0.12（accountStore 主链路 + gameStore 遗留）
+动画:      framer-motion 12.38.0
+类型:      TypeScript 6.0.2
+测试:      Playwright 1.59.1（已装，未配置）
+```
+
+### 5.2 目录结构
+
+```
+src/
+├── App.tsx / App.css          # 入口，按 screen 渲染5个全屏页
+├── main.tsx                   # React 19 StrictMode 挂载
+├── screens/
+│   ├── EntryScreen.tsx        # 选角页
+│   ├── CharacterCreate.tsx    # 创角页
+│   ├── GameScreen.tsx         # 主玩法页
+│   ├── EventScreen.tsx        # 历练演出页
+│   └── CharacterScreen.tsx     # 人物详情全屏页
+├── components/
+│   ├── CharacterPanel.tsx     # 人物面板（灵根饼图/灵气条/属性）
+│   ├── TechniquePanel.tsx     # 五槽功法栏
+│   ├── EquipmentBag.tsx      # 行囊（⚠️仍读gameStore）
+│   ├── EncounterSelectModal.tsx # 历练选择弹窗
+│   ├── EventModal.tsx         # 旧事件弹窗（主流程未用）
+│   ├── RefineModal.tsx        # 周天运转弹窗（已注释无入口）
+│   ├── SkillPanel.tsx          # 技能列表（未挂载）
+│   ├── EquipmentPanel.tsx     # 装备栏（未挂载）
+│   └── BattleLog.tsx          # 战斗日志（未挂载）
+├── systems/
+│   ├── characterSystem.ts      # 角色创建/属性计算/经验/升级/突破
+│   ├── cultivationSystem.ts    # 灵气吸收v2.0/小境界/大境界/历练
+│   ├── spiritAbsorption.ts     # 旧版灵气吸收（事件用）
+│   ├── equipmentSystem.ts      # 装备强化/掉落/套装效果
+│   ├── combatSystem.ts         # 回合制战斗模拟
+│   └── eventSystem.ts         # 随机事件触发
+├── store/
+│   ├── accountStore.ts         # 主Store（多角色/导航/localStorage）
+│   └── gameStore.ts           # 旧演示Store（单角色/挂机tick）
+├── data/
+│   ├── realms.ts              # 5境界配置
+│   ├── equipment.ts          # 8件装备+雷神套装
+│   ├── skills.ts              # 6个技能
+│   ├── monsters.ts           # 8个怪物+挂机常量
+│   ├── events.ts             # 3条事件
+│   ├── encounters.ts          # 历练三象配置
+│   └── techniques.ts         # 5方位功法
+└── types/                     # 11个类型定义文件
+```
+
+### 5.3 双Store架构
+
+```
+accountStore（主）                    gameStore（遗留）
+├── screen 导航                      ├── 单角色初始态
+├── 多角色 CRUD                      ├── 挂机 tick（时间推进）
+├── localStorage 持久化              ├── 战斗/事件
+├── getActiveGameState()             └── 被未迁移组件引用
+├── 装备/强化/事件/历练/突破
+├── executeEncounter
+└── doRefineSpirit（存在但无入口）
+```
+
+**关键风险**：`SkillPanel`、`EventModal`、`EquipmentBag`（components/）、`RefineModal` 等组件仍引用 `gameStore`，与多角色主链路存在数据不一致风险。
+
+---
+
+## 六、待决策 / 待讨论事项
+
+1. **gameTime 未随主流程推进**：accountStore 中 `gameTime` 仅在创角初始化，历练/事件等操作不推进时间。需要确认时间系统是设计延迟实现还是需要立即修复。
+
+2. **双 Store 割裂**：`components/EquipmentBag.tsx` 读取 `gameStore` 而非 `accountStore`，与多角色体系冲突；SkillPanel/EventModal/RefineModal 未挂载但仍在代码中。建议明确哪些遗留组件需要迁移/删除。
+
+3. **大境界突破物品消耗**：SPEC.md 要求突破消耗筑基丹等，当前突破按钮不扣物品。需要确认物品系统设计优先级。
+
+4. **灵气吸收双轨**：历练用 v2.0 规则，事件用 `spiritAbsorption.ts` 旧公式。两套规则不一致且 EventScreen 显示与实际存档可能有偏差。需要统一到 v2.0。
+
+5. **周天功法系统**：RefineModal + `doRefineSpirit` 存在但无 UI 入口，紫薇功法"激活运转"逻辑未接。需要确认是否需要实现完整闭环（开销→道种→7天/次）。
+
+6. **事件扩展**：当前仅 3 条事件，文档计划 6 条；EVENT_TEMPLATES / opportunity_templates 为策划文档，与代码无自动对应。需要补充事件内容或明确事件系统优先级。
+
+7. **五行创角**：当前固定 metal，需要确认是否需要实现五行选择（metal/wood/water/fire/earth 各有属性成长倍率差异）。
+
+8. **页面动画框架**：设计文档存在但未实现，是否需要接入全局转场动效。
+
+---
+
+## 七、Docs 文件完整列表
+
+| 文件 |
+|------|
+| `docs/SPEC.md` |
+| `docs/01-character-system.md` |
+| `docs/02-equipment-system.md` |
+| `docs/03-skill-system.md` |
+| `docs/04-event-system.md` |
+| `docs/05-zhou-tian-system.md` |
+| `docs/06-time-system.md` |
+| `docs/07-navigation-framework.md` |
+| `docs/ACCOUNT_SYSTEM.md` |
+| `docs/EVENT_TEMPLATES.md` |
+| `docs/opportunity_templates.md` |
+| `docs/灵气吸收规则v2.0.md` |
+| `docs/页面切换动画框架设计.md` |
+| `docs/DESIGN_UI_TEST_CHECKLIST.md` |

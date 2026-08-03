@@ -1,0 +1,391 @@
+# 事件系统 - 详细设计文档
+
+> 版本：v1.0
+> 状态：已整合文档 + 代码现状
+> 项目：登仙 Idle Xianxia
+
+---
+
+## 模块总览
+
+```
+事件系统
+├── 子模块1: 历练类型（吸纳/奇遇/争斗/危机）
+├── 子模块2: 灵气吸收规则（v2.0 vs 旧版对比）
+├── 子模块3: 随机事件触发引擎
+├── 子模块4: 事件链（followUp 预留未实现）
+├── 子模块5: 事件奖励结算
+└── 子模块6: 机缘事件模板
+```
+
+---
+
+## 子模块1: 历练系统
+
+### 1.1 设计规格
+
+历练系统是玩家点击「下一回合」后触发的事件类型分类，共 4 种类型：
+
+| 类型 | 英文键 | 说明 | 风险等级 |
+|------|--------|------|---------|
+| 吸纳 | `absorb` | 直接吸收灵气，低风险 | 极低 |
+| 奇遇 | `fortune` | 探索类事件，低风险/中收益 | 低 |
+| 机缘 | `opportunity` | 中等风险，通常有物品/灵气 | 中 |
+| 危机 | `crisis` | 高风险，可能掉血 | 高 |
+| 争斗 | `battle` | 直接触发战斗 | 高 |
+
+> 注意：当前代码中 `争斗` 类型只有入口，无实际战斗触发逻辑（占位符）。
+
+### 1.2 数据结构
+
+**历练选项** (`src/data/encounters.ts`):
+
+```typescript
+interface EncounterOption {
+  kind: EncounterKind;  // 'absorb' | 'wonder' | 'battle' | 'absorb'（危机占位）
+  icon: string;
+  name: string;
+  desc: string;
+}
+
+export const ENCOUNTER_OPTIONS: EncounterOption[] = [
+  { kind: 'absorb', icon: '🌿', name: '吸纳灵气', desc: '汲取天地灵气，巩固灵根修为' },
+  { kind: 'wonder', icon: '🎁', name: '奇遇探宝', desc: '机缘巧合，或有意外收获' },
+  { kind: 'battle', icon: '⚔',  name: '争斗切磋', desc: '与其他修士交锋，胜则有所斩获' },
+  { kind: 'absorb', icon: '⚠',  name: '危机四伏', desc: '待开发选项' }, // 占位符
+];
+```
+
+**事件类型** (`src/types/event.ts`):
+
+```typescript
+export type EventType = '奇遇' | '机缘' | '抉择' | '危机';
+
+export interface GameEvent {
+  id: string;
+  title: string;
+  description: string;
+  type: EventType;
+  realmRange: [Realm, Realm];
+  options: EventOption[];
+  triggerChance: number;  // 单次触发概率（0~1）
+  oneTime: boolean;        // 是否仅触发一次
+}
+
+export interface EventOption {
+  text: string;            // 选项展示文字
+  resultText: string;     // 结果描述
+  reward: EventReward;
+  condition?: {            // 条件（当前未实现过滤）
+    realm?: Realm;
+    statReq?: Partial<Stats>;
+  };
+  timeCost?: number;      // 时间消耗（天）
+}
+```
+
+### 1.3 当前实现状态
+
+- ✅ 历练选项数据 `ENCOUNTER_OPTIONS` 已配置
+- ❌ 历练 UI 未实现（无 EventScreen）
+- ❌ 争斗/危机无实际战斗或危机触发逻辑
+- ❌ 事件弹窗 `EventModal.tsx` 已存在但未与 encounters 联动
+
+---
+
+## 子模块2: 灵气吸收规则
+
+### 2.1 v2.0 设计规格（已确认，待固化）
+
+**核心逻辑：** 每次奇遇提供 1~2 种五行灵气，所有灵气按**灵根比例总和 = 100%** 直接分配。
+
+**计算公式：**
+
+```
+五行灵根（只能吸对应属性，否则=0）：
+  火灵根吸收量 = rawTotal × 火灵根比例
+  水灵根吸收量 = rawTotal × 水灵根比例
+  木灵根吸收量 = rawTotal × 木灵根比例
+  金灵根吸收量 = rawTotal × 金灵根比例
+  土灵根吸收量 = rawTotal × 土灵根比例
+
+乾灵根吸收量 = rawTotal × 乾灵根比例 × 1.5（增幅50%）
+坤灵根吸收量 = rawTotal × 坤灵根比例 × 0.1（权重10%）
+```
+
+**示例（乾50%、火30%、坤20%，100火灵气）：**
+
+| 灵根 | 吸收量 |
+|------|--------|
+| 火灵根(30%) | 30 |
+| 乾灵根(50%) | 50 → 转化 +75（×1.5） |
+| 坤灵根(20%) | 2 → 转化 +0.2（×0.1） |
+
+### 2.2 旧版实现（`spiritAbsorption.ts`）
+
+```typescript
+// 当前代码公式（错误）：
+// actual = raw × (1 + qian/100) × (1 − kun/100)
+// 乾/坤被当作所有五行灵气的统一倍率，不是独立吸收通道
+
+const multiplier = (1 + qianPct) * (1 - kunPct);
+const rawAbsorbed = raw * multiplier;
+```
+
+**问题：**
+1. 乾/坤使用的是 `qian/100`（比例），而非 v2.0 的 `乾比例 × 1.5`
+2. 乾是乘数（放大所有五行），坤也是乘数（缩小所有五行），而非 v2.0 的独立吸收通道
+3. 坤的 ×0.1 系数在旧版中被写作 `(1 − kunPct)`，这会压缩所有灵气而非只分配10%
+
+### 2.3 对比分析
+
+| 维度 | v2.0（正确） | 旧版（错误） |
+|------|-------------|-------------|
+| 乾灵根作用 | 独立吸收通道，×1.5增幅 | 统一乘数，放大所有五行 |
+| 坤灵根作用 | 独立吸收通道，×0.1权重 | 统一乘数，压缩所有五行 |
+| 五行灵根 | 直接按比例分配，无增幅 | 直接按比例分配（正确） |
+| 乾上限 | 待确认（是否和五行相同？） | 无 |
+| 坤上限 | 待确认（是否和五行相同？） | 无 |
+
+### 2.4 待确认事项（v2.0 第六节）
+
+1. **乾/坤上限**：各设多少？是否和五行灵气上限相同？
+2. **权重是否可配置**：坤的 ×0.1 是否固定？
+3. **乾增幅**：×1.5 是否固定？
+4. **奇遇探宝是否也有灵气吸收**：目前看起来奇遇探宝没有灵气，只有物品掉落
+
+### 2.5 UI 显示要求（v2.0 第四节）
+
+结算界面必须显示：
+```
+本次灵气来源：
+  🔥 火灵气 +200
+  💧 水灵气 +100
+
+灵气吸收明细：
+  火灵根（30%）→ 吸收 +30
+  乾灵根（50%）→ 吸收 +50 → 转化 +75（×1.5）
+  坤灵根（20%）→ 吸收 +2 → 转化 +0.2（×0.1）
+
+⏱ 消耗 7 天
+
+当前灵气状态：
+  🔥 火 130/2000    💧 水 100/2000
+  🌿 木 0/2000      🔩 金 0/2000    🪨 土 0/2000
+  ⚪ 乾 75/5000     🖤 坤 0.2/500
+```
+
+### 2.6 当前实现状态
+
+- ❌ `spiritAbsorption.ts` 中的 `absorbSpiritReward` 使用旧版公式
+- ❌ UI 无灵气吸收明细显示
+- ❌ 乾/坤独立吸收通道未实现
+- ❌ 时间消耗（`timeCost`）未在结算中显示
+
+---
+
+## 子模块3: 随机事件触发引擎
+
+### 3.1 设计规格
+
+`checkEventTrigger` 函数逻辑：
+
+```typescript
+export function checkEventTrigger(char: Character, triggeredIds: Set<string>): GameEvent | null {
+  const realmIdx = REALM_ORDER.indexOf(char.realm);
+  const eligible = EVENTS_DATA.filter(e => {
+    const startIdx = REALM_ORDER.indexOf(e.realmRange[0] as Realm);
+    const endIdx = REALM_ORDER.indexOf(e.realmRange[1] as Realm);
+    if (realmIdx < startIdx || realmIdx > endIdx) return false;
+    if (e.oneTime && triggeredIds.has(e.id)) return false;
+    return true;
+  });
+  if (eligible.length === 0) return null;
+
+  // 按顺序独立掷骰，首个命中者被选中
+  for (const e of eligible) {
+    if (Math.random() < e.triggerChance) return e;
+  }
+  return null;
+}
+```
+
+### 3.2 触发规则
+
+1. **境界过滤**：角色当前境界必须在 `realmRange[0]` ~ `realmRange[1]` 之间（含两端）
+2. **一次性过滤**：`oneTime === true` 且已触发过的事件不进入候选池
+3. **独立掷骰**：按 `EVENTS_DATA` 数组顺序依次判定，**首个命中者**被选中
+4. **不触发**：全部失败则本次无事件
+
+**注意**：`triggerChance` 是「轮到该事件时的单次命中概率」，不是整池总概率。排在前面的事件会先 consume 随机数结果。
+
+### 3.3 REALM_ORDER
+
+`src/data/realms.ts`:
+
+```typescript
+export const REALM_ORDER: Realm[] = [
+  '炼气', '筑基', '金丹', '元婴', '化神',
+];
+```
+
+> ⚠️ **不一致**：`04-event-system.md` 描述 REALM_ORDER 包含炼气→筑基→金丹→元婴→化神→合体→大乘→渡劫→仙人（共9个），但 `realms.ts` 只有5个。事件中 `realmRange` 使用的是短列表。
+
+### 3.4 当前实现状态
+
+- ✅ `checkEventTrigger` 函数已实现
+- ❌ 文档中的 `weight` 字段未使用（触发概率使用 `triggerChance`）
+- ❌ `condition`（选项条件）在 UI 和结算中**未实现过滤**
+- ✅ 境界范围过滤正常
+- ✅ oneTime 过滤正常
+
+---
+
+## 子模块4: 事件链（followUp）
+
+### 4.1 设计规格
+
+`EventReward` 中预留了 `followUpEventId` 字段，用于衔接下一事件：
+
+```typescript
+export interface EventReward {
+  statBonus?: Partial<Stats>;
+  expBonus?: number;
+  goldBonus?: number;
+  equipment?: EquipBase;
+  followUpEventId?: string;  // 预留：下一事件ID
+}
+```
+
+### 4.2 当前实现状态
+
+- ❌ `followUpEventId` **完全未实现**
+  - `resolveEvent` 中未读取此字段
+  - 没有 followUp 事件队列机制
+  - 没有 UI 支持连续事件展示
+
+> 这是一个明确的开发缺口。文档描述了「事件链」概念，但代码中没有实现。
+
+---
+
+## 子模块5: 事件奖励结算
+
+### 5.1 设计规格
+
+`resolveEvent` 结算逻辑（在 `gameStore.ts` 中）：
+
+```typescript
+resolveEvent: (optionIndex) => {
+  const option = s.currentEvent.options[optionIndex];
+  // 应用 statBonus 到 bonusFromEvents
+  // 应用 expBonus 调用 addExp（含升级链）
+  // 应用 goldBonus 增加角色 gold
+  // 应用 equipment 追加到背包 bag
+  // followUpEventId 未处理（见子模块4）
+}
+```
+
+**奖励字段与结算行为：**
+
+| 字段 | 类型 | 结算行为 |
+|------|------|---------|
+| `statBonus` | `Partial<Stats>` | 逐项相加进 `bonusFromEvents`（允许负数） |
+| `expBonus` | `number` | 调用 `addExp` 增加经验（含升级链） |
+| `goldBonus` | `number` | 增加 `character.gold` |
+| `equipment` | `EquipBase` | 追加到背包 `bag` |
+| `followUpEventId` | `string` | **未实现** |
+| `spiritReward` | `SpiritReward` | 通过 `absorbSpiritReward` 结算（见子模块2） |
+
+### 5.2 当前实现状态
+
+- ✅ `statBonus` 结算正常
+- ✅ `expBonus` 结算正常（含升级链）
+- ✅ `goldBonus` 结算正常
+- ✅ `equipment` 追加背包正常（有日志）
+- ❌ `spiritReward` 使用旧版公式（见子模块2）
+- ❌ `timeCost` 未在结算中使用（仅存储在 option 中）
+- ❌ 选项条件 `condition` 未实现过滤/拦截
+
+---
+
+## 子模块6: 机缘事件模板
+
+### 6.1 文档现状
+
+| 文档 | 状态 | 说明 |
+|------|------|------|
+| `docs/EVENT_TEMPLATES.md` | 骨架模板，待设计师填充 | 定义了 5 种事件类型的基础格式 |
+| `docs/opportunity_templates.md` | ✅ 已完成（5个模板） | opportunity 类型 |
+| `docs/灵气吸收规则v2.0.md` | ✅ 已确认，待固化 | 灵气吸收规则 |
+
+### 6.2 代码中实际的事件数据
+
+`src/data/events.ts` 中只有 **3 条**事件（不是文档描述的 6 条）：
+
+| id | 标题 | type | realmRange | triggerChance | oneTime |
+|----|------|------|------------|---------------|---------|
+| `spring` | 灵泉洗礼 | 奇遇 | 炼气~炼气 | 0.08 | false |
+| `spirit_rich` | 灵气浓郁 | 机缘 | 炼气~炼气 | 0.065 | false |
+| `spirit_poor` | 灵气贫瘠 | 危机 | 炼气~炼气 | 0.07 | false |
+
+**文档 `04-event-system.md` 描述的 6 条事件**（`cave-treasure`、`secret-realm`、`ancient-ruin`、`heavenly-tribulation`、`dao-test`）**代码中不存在**。
+
+### 6.3 文档 vs 代码不一致汇总
+
+| 维度 | 文档描述 | 代码实际 |
+|------|---------|---------|
+| 事件数量 | 6 条 | 3 条 |
+| 灵气吸收公式 | v2.0（乾×1.5，坤×0.1） | 旧版（乘数公式） |
+| 境界范围 | 9 个境界 | 5 个境界（realms.ts） |
+| followUp | 事件链衔接 | 完全未实现 |
+| 选项条件 | condition 过滤 | 未实现（任意境界可选） |
+
+---
+
+## 模块间依赖关系
+
+```
+encounters.ts (历练选项)
+       ↓
+events.ts (事件数据) ← 依赖 realms.ts
+       ↓
+eventSystem.ts (checkEventTrigger)
+       ↓
+gameStore.ts (resolveEvent)
+       ↓
+spiritAbsorption.ts (absorbSpiritReward) ← ⚠️ 使用旧版公式
+       ↓
+EventModal.tsx (UI 展示)
+```
+
+---
+
+## 优先级排序
+
+| 优先级 | 事项 | 说明 |
+|--------|------|------|
+| 🔴 P0 | 灵气吸收规则 v2.0 落地 | 重写 `spiritAbsorption.ts` |
+| 🔴 P0 | followUp 事件链实现 | `resolveEvent` 中处理 `followUpEventId` |
+| 🟡 P1 | 补充缺失的 3 条事件 | `cave-treasure`、`secret-realm`、`ancient-ruin` 等 |
+| 🟡 P1 | 选项条件 `condition` 实现 | UI 过滤 + 结算拦截 |
+| 🟡 P1 | `timeCost` 结算集成 | 事件结算时扣除游戏时间 |
+| 🟢 P2 | 灵气吸收 UI 明细 | 显示吸收来源/乾坤转化明细 |
+| 🟢 P2 | 危机/争斗类型实现 | 实际战斗或危机逻辑 |
+| 🟢 P2 | 境界范围扩展 | 与文档对齐（9 个境界） |
+
+---
+
+## 修改文件清单
+
+| 文件 | 修改内容 |
+|------|---------|
+| `src/systems/spiritAbsorption.ts` | 重写 `absorbSpiritReward` 为 v2.0 公式 |
+| `src/systems/eventSystem.ts` | 可选：增加 `weight` 字段支持 |
+| `src/store/gameStore.ts` | 实现 `followUpEventId` 处理逻辑；实现 `timeCost` 扣除 |
+| `src/data/events.ts` | 补充缺失的 3 条事件；扩展 realmRange 到 9 个境界 |
+| `src/components/EventModal.tsx` | 实现选项条件过滤；增加灵气吸收明细 UI |
+| `src/screens/EventScreen.tsx` | 实现历练选择界面（待开发） |
+
+---
+
+_文档版本：v1.0 | 由子代理分析代码和文档生成_

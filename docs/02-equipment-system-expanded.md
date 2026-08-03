@@ -1,0 +1,347 @@
+# 装备系统 - 详细设计文档
+
+> 基于 `docs/02-equipment-system.md` 扩展，对比 `src/systems/equipmentSystem.ts`、`src/data/equipment.ts`、`src/types/equipment.ts` 与设计文档的差异，标注实现状态。
+
+---
+
+## 模块总览
+
+| 子模块 | 设计完整性 | 代码实现状态 | 关键问题 |
+|--------|-----------|-------------|---------|
+| 装备槽位与穿戴 | ✅ 完整 | ✅ 已实现 | — |
+| 品质与词缀 | ✅ 完整 | ✅ 已实现 | — |
+| 强化系统 | ✅ 完整 | ⚠️ 部分 | 扣费公式与 `enhanceCost` 不一致 |
+| 套装效果 | ✅ 完整 | ❌ 未接入 | `SET_EFFECTS` 未汇入总属性 |
+| 掉落与获取 | ✅ 完整 | ✅ 已实现 | — |
+| 装备与属性交互 | ✅ 完整 | ✅ 已实现 | — |
+
+---
+
+## 子模块 1: 装备槽位与穿戴
+
+### 设计规格
+
+- **槽位枚举**：`EquipSlot = 'weapon' | 'armor' | 'accessory1' | 'accessory2' | 'artifact'`
+- **穿戴结构**：`EquippedSlots` 对五个槽位各持 `EquipBase | null`
+- **约束**：每槽至多一件，卸下后返回背包
+
+### 数据结构
+
+```typescript
+// src/types/equipment.ts
+export type EquipSlot = 'weapon' | 'armor' | 'accessory1' | 'accessory2' | 'artifact';
+
+export interface EquippedSlots {
+  weapon: EquipBase | null;
+  armor: EquipBase | null;
+  accessory1: EquipBase | null;
+  accessory2: EquipBase | null;
+  artifact: EquipBase | null;
+}
+```
+
+### 计算公式
+
+无特殊公式，槽位只做容器。汇总属性时 `getTotalEquipmentBonus` 遍历所有槽位，对每个 `EquipBase` 调用 `getEnhancedStats` 并按 `StatKey` 相加。
+
+### 当前实现状态
+
+✅ **已实现，与设计一致**
+
+- `EquippedSlots` 类型与设计完全吻合
+- `gameStore.equipItem(slot, itemId)`：从背包移除指定物品，装配到对应槽位
+- `gameStore.unequipSlot(slot)`：将槽位物品卸下返回背包
+- `getTotalEquipmentBonus(slots)`：遍历五个槽位，汇总基础属性强化值 + affix 固定值
+
+---
+
+## 子模块 2: 品质与词缀
+
+### 设计规格
+
+- **品质枚举**：`Quality = 'white' | 'green' | 'blue' | 'purple' | 'gold' | 'red'`
+- **品质全序**：`QUALITY_ORDER = ['white','green','blue','purple','gold','red']`
+- **Affix 结构**：`{ stat: StatKey, value: number }`，`StatKey ∈ { hp, mp, atk, def, spd, wil }`
+
+### 数据结构
+
+```typescript
+// src/types/equipment.ts
+export type Quality = 'white' | 'green' | 'blue' | 'purple' | 'gold' | 'red';
+
+export interface Affix {
+  stat: StatKey;
+  value: number;
+}
+
+// src/data/equipment.ts
+export const QUALITY_ORDER = ['white', 'green', 'blue', 'purple', 'gold', 'red'] as const;
+
+export const QUALITY_COLORS: Record<string, string> = {
+  white: '#c8ccd4', green: '#81c784', blue: '#64b5f6',
+  purple: '#ce93d8', gold: '#d4a843', red: '#e57373',
+};
+```
+
+### 当前实现状态
+
+✅ **已实现，与设计一致**
+
+- 品质枚举、颜色映射、全序常量均与设计一致
+- Affix 条数在 `EQUIPMENT_DATA` 中逐件配置，代码未做品质限制（符合设计说明）
+- `getEnhancedStats` 中 affix 叠加逻辑：`enhanced[a.stat] = (enhanced[a.stat] ?? 0) + a.value`（固定值，不随强化缩放）
+
+---
+
+## 子模块 3: 强化系统
+
+### 设计规格
+
+- **缩放对象**：仅 `baseStats` 中的每一项，`affixes` 不参与缩放
+- **强化公式**：`enhanced[k] = baseStats[k] * (1 + enhanceLevel * 0.10)`
+- **强化费用**：`cost = enhanceLevel * 1000 * QUALITY_MULTIPLIER[quality]`
+- **品质系数**：
+
+| white | green | blue | purple | gold | red |
+|------:|------:|-----:|-------:|-----:|----:|
+| 1 | 1.5 | 2 | 3 | 5 | 10 |
+
+### 计算公式
+
+```typescript
+// src/systems/equipmentSystem.ts
+export function getEnhancedStats(equip: EquipBase): Partial<Stats> {
+  const factor = 1 + equip.enhanceLevel * 0.10;
+  const enhanced: Partial<Stats> = {};
+  const keys = Object.keys(equip.baseStats) as StatKey[];
+  for (const k of keys) {
+    enhanced[k] = (equip.baseStats[k] ?? 0) * factor;
+  }
+  for (const a of equip.affixes) {
+    enhanced[a.stat] = (enhanced[a.stat] ?? 0) + a.value;
+  }
+  return enhanced;
+}
+
+export function enhanceCost(equip: EquipBase): number {
+  return equip.enhanceLevel * 1000 * (QUALITY_MULTIPLIER[equip.quality] ?? 1);
+}
+```
+
+### 当前实现状态
+
+⚠️ **部分实现，存在扣费公式不一致问题**
+
+| 方面 | 状态 |
+|------|------|
+| 强化数值计算 | ✅ 与设计一致 |
+| 强化费用（`enhanceCost`） | ✅ 公式正确 |
+| 背包扣费（`gameStore.enhanceItem`） | ❌ 缺少品质系数 |
+
+**问题详情**：
+
+`gameStore.enhanceItem` 当前扣费为：
+```typescript
+const cost = item.enhanceLevel * 1000;  // ❌ 未乘 QUALITY_MULTIPLIER
+```
+
+但 `equipmentSystem.enhanceCost` 的设计公式为：
+```typescript
+return equip.enhanceLevel * 1000 * (QUALITY_MULTIPLIER[equip.quality] ?? 1);  // ✅
+```
+
+**不一致影响**：白色装备扣费正确；红色神器（×10）实际扣费仅为设计的 1/10，严重偏低。
+
+**修复方向**：将 `gameStore.enhanceItem` 中的 `item.enhanceLevel * 1000` 替换为 `enhanceCost(item)` 调用。
+
+---
+
+## 子模块 4: 套装效果
+
+### 设计规格
+
+- **套装表**：`SET_EFFECTS`，目前仅有一套 `thunder-god`（雷神）
+- **触发条件**：已装备同 `setId` 件数达到 2 件或 4 件
+- **效果**：
+
+| 件数 | description | statBonus | special |
+|------|-------------|-----------|---------|
+| 2 | ATK+15% | `{ atk: 30 }` | — |
+| 4 | 攻击时20%概率触发雷击 | `{ atk: 60 }` | '雷击' |
+
+- **当前数据**：`tianlei-sword`（天雷剑）带 `setId: 'thunder-god'`
+
+### 数据结构
+
+```typescript
+// src/types/equipment.ts
+export interface SetEffect {
+  setId: string;
+  name: string;
+  pieces2: { description: string; statBonus: Partial<Stats> };
+  pieces4?: { description: string; statBonus: Partial<Stats>; special?: string };
+}
+
+// src/data/equipment.ts
+export const SET_EFFECTS = [
+  {
+    setId: 'thunder-god',
+    name: '雷神',
+    pieces2: { description: 'ATK+15%', statBonus: { atk: 30 } },
+    pieces4: { description: '攻击时20%概率触发雷击', statBonus: { atk: 60 }, special: '雷击' },
+  },
+];
+```
+
+### 当前实现状态
+
+❌ **未接入总属性/结算**
+
+- `SET_EFFECTS` 数据已定义
+- `EquipBase.setId` 字段已存在
+- **但** `getTotalEquipmentBonus` 在汇总装备属性时**未读取 `setId`**，未查询 `SET_EFFECTS`，未叠加套装 statBonus
+
+```typescript
+// src/systems/equipmentSystem.ts
+export function getTotalEquipmentBonus(slots: EquippedSlots): Partial<Stats> {
+  const total: Partial<Stats> = {};
+  const all = [slots.weapon, slots.armor, slots.accessory1, slots.accessory2, slots.artifact];
+  for (const eq of all) {
+    if (!eq) continue;
+    const stats = getEnhancedStats(eq);
+    for (const k of Object.keys(stats) as StatKey[]) {
+      total[k] = (total[k] ?? 0) + (stats[k] ?? 0);
+    }
+  }
+  // ❌ 缺少：套装效果统计与加成
+  return total;
+}
+```
+
+**待开发事项**：
+
+1. 统计当前已装备的 `setId` 分布（按 `setId` 计数已装备件数）
+2. 依据 `SET_EFFECTS` 叠加对应件数的 `statBonus` 到 `total`
+3. `special: '雷击'` 需接入战斗结算（在攻击流程中检查概率触发）
+
+---
+
+## 子模块 5: 掉落与获取
+
+### 设计规格
+
+- **掉落掷骰**：每个品质有效权重 = `QUALITY_WEIGHTS[q] * (1 + monsterLevel * 0.01)`
+- **权重表**：
+
+| white | green | blue | purple | gold | red |
+|------:|------:|-----:|-------:|-----:|----:|
+| 50 | 25 | 15 | 7 | 2.5 | 0.5 |
+
+- **掉落流程**：掷品质 → 从该品质 `EQUIPMENT_DATA` 池随机选一件 → 生成唯一 `id`，重置 `enhanceLevel` 为 `0`
+
+### 计算公式
+
+```typescript
+// src/systems/equipmentSystem.ts
+export function rollDrop(monsterLevel: number): EquipBase | null {
+  const qualities: Quality[] = ['white', 'green', 'blue', 'purple', 'gold', 'red'];
+  const weights = qualities.map(q =>
+    (QUALITY_WEIGHTS[q] ?? 0) * (1 + monsterLevel * 0.01)
+  );
+  const total = weights.reduce((a, b) => a + b, 0);
+  let roll = Math.random() * total;
+  let chosen: Quality = 'white';
+  for (let i = 0; i < qualities.length; i++) {
+    roll -= weights[i];
+    if (roll <= 0) { chosen = qualities[i]; break; }
+  }
+  const pool = EQUIPMENT_DATA.filter(e => e.quality === chosen);
+  if (pool.length === 0) return null;
+  const base = pool[Math.floor(Math.random() * pool.length)];
+  return {
+    ...base,
+    id: `${base.id}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    enhanceLevel: 0,
+  };
+}
+```
+
+### 当前实现状态
+
+✅ **已实现，与设计一致**
+
+- 品质权重随怪物等级缩放公式与设计完全一致
+- 唯一 ID 生成方式合理（时间戳 + 随机串）
+- `enhanceLevel` 重置为 `0` 符合设计
+
+---
+
+## 子模块 6: 装备与属性的交互
+
+### 设计规格
+
+- **单件属性**：`getEnhancedStats(equip)` → 基础属性×强化倍率 + affix 固定值
+- **总属性**：`getTotalEquipmentBonus(slots)` → 遍历五槽，按 `StatKey` 相加各件 `getEnhancedStats` 结果
+- **属性汇总路径**：装备属性 → `getTotalEquipmentBonus` → 角色面板 / 战斗属性计算
+
+### 当前实现状态
+
+✅ **已实现，与设计一致**
+
+```typescript
+// src/systems/equipmentSystem.ts
+export function getTotalEquipmentBonus(slots: EquippedSlots): Partial<Stats> {
+  const total: Partial<Stats> = {};
+  const all = [slots.weapon, slots.armor, slots.accessory1, slots.accessory2, slots.artifact];
+  for (const eq of all) {
+    if (!eq) continue;
+    const stats = getEnhancedStats(eq);
+    for (const k of Object.keys(stats) as StatKey[]) {
+      total[k] = (total[k] ?? 0) + (stats[k] ?? 0);
+    }
+  }
+  return total;
+}
+```
+
+- 路径清晰：`EquippedSlots` → `getTotalEquipmentBonus` → `Partial<Stats>`
+- 叠加逻辑正确（`total[k] ?? 0 + stats[k] ?? 0`）
+- 唯一缺口：套装效果未汇入（见子模块 4）
+
+---
+
+## 模块间依赖关系
+
+```
+EQUIPMENT_DATA / SET_EFFECTS (数据层)
+         ↓
+equipmentsystem.ts (强化计算 / 费用 / 掉落 / 属性汇总)
+         ↓
+gameStore.ts (穿戴 / 卸下 / 强化扣费 — 依赖 equipmentSystem)
+         ↓
+UI 层（装备面板 / 背包 / 角色详情 — 读取 getTotalEquipmentBonus 结果）
+```
+
+---
+
+## 优先级排序
+
+| 优先级 | 事项 | 说明 |
+|--------|------|------|
+| 🔴 高 | 修复 `gameStore.enhanceItem` 扣费公式 | 与 `enhanceCost` 不一致，高品质装备费用严重偏低 |
+| 🔴 高 | 套装效果接入 `getTotalEquipmentBonus` | 当前套装属性完全不生效 |
+| 🟡 中 | `special: '雷击'` 接入战斗结算 | 需在攻击流程中实现概率触发逻辑 |
+| 🟢 低 | `rollDrop` 怪物等级传入点 | 需确认战斗胜利后调用时传参正确 |
+
+---
+
+## 附录：代码 vs 设计文档差异对照
+
+| 项目 | 设计文档 | 代码实现 | 状态 |
+|------|---------|---------|------|
+| 强化数值公式 | `base * (1 + level * 0.10)` | ✅ 完全一致 | ✅ |
+| 强化费用（系统函数） | `level * 1000 * QUALITY_MULTIPLIER` | ✅ `enhanceCost` 一致 | ✅ |
+| 强化扣费（store） | `level * 1000 * QUALITY_MULTIPLIER` | ❌ `level * 1000` 无系数 | ❌ |
+| 套装数据 | `SET_EFFECTS` 定义雷神套 | ✅ 已定义 | ⚠️ 未接入 |
+| 掉落权重随等级缩放 | `WEIGHTS * (1 + level * 0.01)` | ✅ 完全一致 | ✅ |
+| Affix 不参与强化缩放 | 设计如此 | ✅ 一致 | ✅ |

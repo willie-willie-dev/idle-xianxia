@@ -1,74 +1,54 @@
-import { useState, useEffect, useRef } from 'react';
-import { useGameStore } from './store/gameStore';
-import { IDLE_TICK_MS } from './data/monsters';
-import CharacterPanel from './components/CharacterPanel';
-import BattleLog from './components/BattleLog';
-import EquipmentPanel from './components/EquipmentPanel';
-import EquipmentBag from './components/EquipmentBag';
-import SkillPanel from './components/SkillPanel';
-import EventModal from './components/EventModal';
-import { canBreakthrough } from './systems/characterSystem';
+import type { ReactNode } from 'react';
+import { useAccountStore } from './store/accountStore';
+import EntryScreen from './screens/EntryScreen';
+import CharacterCreate from './screens/CharacterCreate';
+import GameScreen from './screens/GameScreen';
+import CharacterScreen from './screens/CharacterScreen';
+import EventScreen from './screens/EventScreen';
+import { PageTransitionProvider, usePageTransition } from './components/PageTransitionProvider';
+import PageTransitionOverlay from './components/PageTransitionOverlay';
 
-type Tab = 'stats' | 'equip' | 'skills' | 'bag';
+function AppContent() {
+  const { isTransitioning } = usePageTransition();
+  const { screen } = useAccountStore();
 
-export default function App() {
-  const { isIdling, startIdle, stopIdle, tickIdle, doBattle, character, tryBreakthrough } = useGameStore();
-  const [tab, setTab] = useState<Tab>('stats');
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  useEffect(() => {
-    if (isIdling) {
-      timerRef.current = setInterval(tickIdle, IDLE_TICK_MS);
-    } else if (timerRef.current) {
-      clearInterval(timerRef.current);
-      timerRef.current = null;
-    }
-    return () => { if (timerRef.current) clearInterval(timerRef.current); };
-  }, [isIdling, tickIdle]);
-
-  const canBreak = canBreakthrough(character);
+  let eventScreen: ReactNode = null;
+  if (screen === 'event') {
+    const id = useAccountStore.getState().storage.activeAccountId;
+    const sgs = id ? useAccountStore.getState().storage.gameStates[id] : null;
+    const kind = sgs?.pendingEncounterKind ?? 'absorb';
+    eventScreen = (
+      <EventScreen
+        encounterKind={kind}
+        onComplete={() => useAccountStore.getState().navigateToGame()}
+      />
+    );
+  }
 
   return (
-    <div className="app">
-      <header className="app-header">
-        <h1>仙途漫漫</h1>
-        <p className="subtitle">挂机修仙 · idle xianxia</p>
-      </header>
-
-      <CharacterPanel />
-
-      <div className="actions">
-        <button className={`btn ${isIdling ? 'active' : ''}`} onClick={isIdling ? stopIdle : startIdle}>
-          {isIdling ? '⏸ 停止修炼' : '🧘 开始修炼'}
-        </button>
-        <button className="btn btn-battle" onClick={doBattle} disabled={isIdling}>
-          ⚔ 历练
-        </button>
-        {canBreak && (
-          <button className="btn btn-breakthrough" onClick={tryBreakthrough}>
-            🌟 突破境界
-          </button>
-        )}
+    <>
+      <div
+        style={{
+          filter: isTransitioning ? 'blur(8px)' : 'none',
+          transition: 'filter 0.4s ease',
+          minHeight: '100%',
+        }}
+      >
+        {screen === 'entry' && <EntryScreen />}
+        {screen === 'create' && <CharacterCreate />}
+        {eventScreen}
+        {screen === 'character' && <CharacterScreen />}
+        {screen === 'game' && <GameScreen />}
       </div>
+      <PageTransitionOverlay />
+    </>
+  );
+}
 
-      <BattleLog />
-
-      <div className="tab-bar">
-        {(['stats', 'equip', 'skills', 'bag'] as Tab[]).map(t => (
-          <button key={t} className={`tab-btn ${tab === t ? 'active' : ''}`} onClick={() => setTab(t)}>
-            {{ stats: '属性', equip: '装备', skills: '技能', bag: '背包' }[t]}
-          </button>
-        ))}
-      </div>
-
-      <div className="tab-content">
-        {tab === 'stats' && <CharacterPanel />}
-        {tab === 'equip' && <EquipmentPanel />}
-        {tab === 'skills' && <SkillPanel />}
-        {tab === 'bag' && <EquipmentBag />}
-      </div>
-
-      <EventModal />
-    </div>
+export default function App() {
+  return (
+    <PageTransitionProvider>
+      <AppContent />
+    </PageTransitionProvider>
   );
 }

@@ -1,5 +1,5 @@
 import type { Stats, StatKey, Character, Realm, WuXing } from '../types';
-import { WUXING_GROWTH } from '../types/character';
+import { WUXING_GROWTH, defaultEvenSpiritRoots, emptySpiritQi, type RealmStage, type Gender } from '../types/character';
 import { REALMS, REALM_ORDER } from '../data/realms';
 
 export const DEFAULT_GROWTH_RATES = { hp: 12, mp: 5, atk: 2.5, def: 2, spd: 0.3, wil: 1.0 };
@@ -62,18 +62,37 @@ export function addExp(char: Character, exp: number): Character {
   return c;
 }
 
-export function createInitialCharacter(element: WuXing = 'metal'): Character {
+export interface CreateCharacterOptions {
+  name?: string;
+  realm?: Realm;
+  realmStage?: RealmStage;
+  spiritRoots?: Character['spiritRoots'];
+  inventory?: Record<string, number>;
+  gender?: Gender;
+}
+
+export function createInitialCharacter(element: WuXing = 'metal', opts?: CreateCharacterOptions): Character {
+  const name = opts?.name?.trim() || '无名修士';
   return {
     id: 'player',
-    name: '无名修士',
+    name,
     level: 1,
     exp: 0,
-    realm: '炼气',
+    realm: opts?.realm ?? '炼气',
+    realmStage: opts?.realmStage ?? 'early',
     element,
+    gender: opts?.gender ?? 'male',
+    spiritRoots: opts?.spiritRoots ?? defaultEvenSpiritRoots(),
+    spiritQi: emptySpiritQi(),
+    inventory: opts?.inventory ? { ...opts.inventory } : {},
     baseStats: { hp: 100, mp: 30, atk: 10, def: 5, spd: 10, wil: 8 },
     growthRates: { ...DEFAULT_GROWTH_RATES },
     bonusFromEvents: {},
     skillPoint: 0,
     gold: 0,
+    realmProgress: 0,
+    techniqueSlots: { jiao: null, jing: null, ziwei: null, kui: null, dou: null },
+    knownTechniques: [],
+    techniqueStash: {},
   };
 }
