@@ -1,0 +1,12 @@
+---
+description: 天道服务器连接方式：用 gotiandao / ssh gotiandao，禁止把密码写入仓库。
+alwaysApply: true
+---
+
+# 天道服务器
+
+- 昵称：天道服务器。IP `121.41.188.239`，用户 `root`。
+- 登录：本地执行 `gotiandao`，或 `ssh gotiandao`。私钥 `~/.ssh/tiandao.pem`。
+- 以后在这台机器上做配置，一律走 `gotiandao`。
+- **禁止**把登录密码写入仓库或任何会提交的文件。
+- 项目代码仍禁止在服务器上直接改写，只允许拉取本地代码。
