@@ -114,7 +114,7 @@ applyOption(character, event, optionIndex): { cultivation, plotFlags, nextSeed }
 | DEFAULT_ROOTS | 乾15 坤10 五行各15 |
 | START_TECHNIQUE | 青木诀 `{absorbRate:0.4, convertRate:0.3}` |
 | LOCATIONS | 火山（火200+土30）、灵泉（水200+木50） |
-| EVENT_POOL | 24 条（每境界 8 条），单选项 +5~15 修为或剧情标记 |
+| EVENT_POOL | 24 条（每境界 8 条，文案 v0.2 已写完），单选项 +5~15 修为或剧情标记 |
 
 ## 6. 一个循环的时序
 

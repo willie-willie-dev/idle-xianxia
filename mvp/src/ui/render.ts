@@ -7,9 +7,29 @@
 
 import { canBreakthrough, createBrowserApp } from '../app.ts';
 import type { GameApp } from '../app.ts';
-import type { CharacterSummary, GameEvent, MvpCharacter } from '../types.ts';
+import type { CharacterSummary, GameEvent, MvpCharacter, Roots } from '../types.ts';
 
 const LOG_LIMIT = 60;
+
+/** 灵根七通道的展示顺序与中文名（键与 `Roots` 一致）。 */
+const ROOT_LABELS: readonly (readonly [keyof Roots, string])[] = [
+  ['qian', '乾'],
+  ['kun', '坤'],
+  ['metal', '金'],
+  ['wood', '木'],
+  ['water', '水'],
+  ['fire', '火'],
+  ['earth', '土'],
+];
+
+/** 五行主属性 -> 灵根通道，用来在七通道里标出主属那一枚。 */
+const ELEMENT_ROOT: Record<MvpCharacter['element'], keyof Roots> = {
+  金: 'metal',
+  木: 'wood',
+  水: 'water',
+  火: 'fire',
+  土: 'earth',
+};
 
 interface ViewState {
   app: GameApp;
@@ -70,6 +90,9 @@ export async function bootstrap(): Promise<void> {
   const btnAbsorb = el<HTMLButtonElement>('btn-absorb');
   const btnBreakthrough = el<HTMLButtonElement>('btn-breakthrough');
   const btnEvent = el<HTMLButtonElement>('btn-event');
+  const charRoots = el<HTMLElement>('char-roots');
+  const charProgress = el<HTMLElement>('char-progress');
+  const charProgressBar = el<HTMLElement>('char-progress-bar');
 
   el<HTMLElement>('storage-hint').textContent =
     storageName === 'indexeddb'
@@ -92,6 +115,44 @@ export async function bootstrap(): Promise<void> {
     screenGame.classList.toggle('hidden', name !== 'game');
   }
 
+  /** 灵根七通道：横排小标签，五行主属性那一枚高亮。 */
+  function renderRoots(character: MvpCharacter): void {
+    clear(charRoots);
+    const main = ELEMENT_ROOT[character.element];
+    for (const [key, label] of ROOT_LABELS) {
+      const raw = character.spiritRoots?.[key];
+      const value = typeof raw === 'number' && Number.isFinite(raw) ? raw : 0;
+      const chip = make('span', key === main ? 'root-chip is-element' : 'root-chip');
+      chip.title = `${label}灵根 ${fmt(value)}%`;
+      chip.append(
+        make('span', 'root-key', label),
+        make('span', 'root-value', `${fmt(value)}%`),
+      );
+      charRoots.append(chip);
+    }
+  }
+
+  /**
+   * 修为进度：条宽 = cultivation / nextThreshold。
+   * 突破成功时 cultivation 已被扣掉旧阈值，所以这里天然显示「余下修为 / 新阈值」。
+   */
+  function renderProgress(character: MvpCharacter): void {
+    const threshold = character.nextThreshold;
+    const ratio =
+      threshold > 0 && Number.isFinite(character.cultivation)
+        ? character.cultivation / threshold
+        : 0;
+    const percent = Math.min(100, Math.max(0, ratio * 100));
+    charProgressBar.style.width = `${percent.toFixed(1)}%`;
+    charProgress.textContent = `${fmt(character.cultivation)} / ${fmt(threshold)}`;
+
+    const track = charProgressBar.parentElement;
+    if (track !== null) {
+      track.setAttribute('aria-valuenow', fmt(character.cultivation));
+      track.setAttribute('aria-valuemax', fmt(threshold));
+    }
+  }
+
   function renderGame(character: MvpCharacter): void {
     state.character = character;
     el<HTMLElement>('char-name').textContent = character.name;
@@ -102,6 +163,8 @@ export async function bootstrap(): Promise<void> {
     el<HTMLElement>('char-threshold').textContent = String(character.nextThreshold);
     el<HTMLElement>('char-element').textContent = character.element;
     el<HTMLElement>('char-technique').textContent = character.technique.name;
+    renderRoots(character);
+    renderProgress(character);
 
     const ready = canBreakthrough(character);
     btnBreakthrough.disabled = !ready;
