@@ -7,7 +7,7 @@ import {
   REALM_THRESHOLDS,
   START_TECHNIQUE,
 } from '../src/data/balance.ts';
-import { MemoryCharacterRepository } from '../src/storage/repository.ts';
+import { MemoryCharacterRepository, withDefaults } from '../src/storage/repository.ts';
 import type { MvpCharacter } from '../src/types.ts';
 
 /** 让 Date.now() 至少前进 1ms，避免 createdAt / updatedAt 撞在同一毫秒。 */
@@ -57,12 +57,15 @@ test('全链路：create → list → get → update → remove → activeId', a
   // update：patch 合并 + updatedAt 刷新 + 返回新对象
   const before = await repo.get(first.id);
   await tick();
-  const patched = await repo.update(first.id, { cultivation: 42, day: 7 });
+  const patched = await repo.update(first.id, {
+    cultivation: 42,
+    time: { day: 7, tick: 6 },
+  });
   assert.notEqual(patched, before);
   assert.equal(patched.id, first.id);
   assert.equal(patched.createdAt, first.createdAt);
   assert.equal(patched.cultivation, 42);
-  assert.equal(patched.day, 7);
+  assert.equal(patched.time.day, 7);
   assert.equal(patched.name, '沈青');
   assert.ok(patched.updatedAt > (before?.updatedAt ?? 0));
   // 原对象不被就地修改
@@ -112,7 +115,8 @@ test('create：缺省值全部来自 balance.ts', async () => {
   assert.equal(character.nextThreshold, REALM_THRESHOLDS['筑基']);
   assert.equal(character.cultivationMax, INITIAL_CULTIVATION_MAX);
   assert.deepEqual(character.eventState, { doneIds: [], count: 0 });
-  assert.equal(character.day, 1);
+  assert.equal(character.time.day, 1);
+  assert.equal(character.time.tick, 0);
   assert.equal(character.saveVersion, 1);
   assert.match(character.id, /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
   assert.equal(typeof character.createdAt, 'number');
@@ -175,7 +179,7 @@ test('update / get：不存在的 id 抛错 / 返回 null', async () => {
   const repo = new MemoryCharacterRepository();
   assert.equal(await repo.get('missing'), null);
   await assert.rejects(
-    () => repo.update('missing', { day: 2 }),
+    () => repo.update('missing', { time: { day: 2, tick: 1 } }),
     /角色不存在/,
   );
 });
@@ -184,4 +188,17 @@ test('list：空仓库返回空数组', async () => {
   const repo = new MemoryCharacterRepository();
   assert.deepEqual(await repo.list(), []);
   assert.equal(await repo.getActiveId(), null);
+});
+
+test('withDefaults：老存档只有 day 时迁移成 time，并删掉旧字段', async () => {
+  const repo = new MemoryCharacterRepository();
+  const created = await repo.create({ name: '旧档' });
+  const legacy = { ...created } as unknown as Record<string, unknown>;
+  legacy.day = 12;
+  delete legacy.time;
+
+  const migrated = withDefaults(legacy as unknown as MvpCharacter);
+
+  assert.deepEqual(migrated.time, { day: 12, tick: 11 }); // tick = day - 1
+  assert.equal('day' in migrated, false);
 });

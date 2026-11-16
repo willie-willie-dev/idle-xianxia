@@ -26,6 +26,7 @@ import type {
   MvpCharacter,
   Roots,
   Technique,
+  TimeState,
   WuXing,
 } from '../types.ts';
 
@@ -125,7 +126,7 @@ export function buildCharacter(
     technique,
     eventState: { doneIds: [], count: 0 },
     plotFlags: [],
-    day: INITIAL_DAY,
+    time: { day: INITIAL_DAY, tick: 0 },
     rngSeed: now >>> 0,
     saveVersion: 1,
     createdAt: now,
@@ -139,7 +140,32 @@ export function withDefaults(character: MvpCharacter): MvpCharacter {
   if (!Array.isArray(character.eventState?.doneIds)) {
     character.eventState = { doneIds: [], count: character.eventState?.count ?? 0 };
   }
+  migrateTime(character);
   return character;
+}
+
+/**
+ * 时间字段迁移：老存档只有 `day: number`，没有 `time`。
+ * 有旧 `day` 就沿用它补 `{ day, tick: day - 1 }`（tick = 累计推进天数），
+ * 否则从第 1 天开始；随后删掉旧字段。
+ */
+function migrateTime(character: MvpCharacter): void {
+  const legacy = character as MvpCharacter & { day?: unknown };
+  const current = character.time as TimeState | undefined;
+  const day =
+    current !== undefined && current !== null && Number.isFinite(current.day)
+      ? current.day
+      : typeof legacy.day === 'number' && Number.isFinite(legacy.day)
+        ? legacy.day
+        : INITIAL_DAY;
+  const tick =
+    current !== undefined &&
+    current !== null &&
+    Number.isFinite(current.tick)
+      ? current.tick
+      : Math.max(0, day - INITIAL_DAY);
+  character.time = { day, tick };
+  delete legacy.day;
 }
 
 /** 深拷贝，避免调用方拿到存档内部引用。 */
@@ -153,7 +179,7 @@ function summarize(character: MvpCharacter): CharacterSummary {
     name: character.name,
     realm: character.realm,
     cultivation: character.cultivation,
-    day: character.day,
+    day: character.time.day,
     createdAt: character.createdAt,
   };
 }
@@ -187,7 +213,8 @@ export class MemoryCharacterRepository implements CharacterRepository {
   #activeId: string | null = null;
 
   async list(): Promise<CharacterSummary[]> {
-    return [...this.#items.values()].map(summarize).sort(compareSummary);
+    // list 也过一遍 withDefaults：老存档缺 time 时不能把整个列表打挂。
+    return [...this.#items.values()].map(withDefaults).map(summarize).sort(compareSummary);
   }
 
   async get(id: string): Promise<MvpCharacter | null> {

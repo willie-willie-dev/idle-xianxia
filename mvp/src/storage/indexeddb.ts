@@ -66,7 +66,7 @@ function summarize(character: MvpCharacter): CharacterSummary {
     name: character.name,
     realm: character.realm,
     cultivation: character.cultivation,
-    day: character.day,
+    day: character.time.day,
     createdAt: character.createdAt,
   };
 }
@@ -136,7 +136,8 @@ export class IndexedDbCharacterRepository implements CharacterRepository {
       tx.objectStore(STORE_CHARACTERS).getAll() as IDBRequest<MvpCharacter[]>,
     );
     if (all.length === 0) return [];
-    return all.map(summarize).sort(compareSummary);
+    // 老存档缺 time 时先补默认值，避免列表整体读不出来。
+    return all.map(withDefaults).map(summarize).sort(compareSummary);
   }
 
   async get(id: string): Promise<MvpCharacter | null> {
@@ -165,13 +166,15 @@ export class IndexedDbCharacterRepository implements CharacterRepository {
     const db = await this.#open();
     const tx = db.transaction(STORE_CHARACTERS, 'readwrite');
     const store = tx.objectStore(STORE_CHARACTERS);
-    const current = await request<MvpCharacter | undefined>(
+    const raw = await request<MvpCharacter | undefined>(
       store.get(id) as IDBRequest<MvpCharacter | undefined>,
     );
-    if (current === undefined) {
+    if (raw === undefined) {
       tx.abort();
       throw new Error(`角色不存在：${id}`);
     }
+    // 老存档（缺 time / 有 legacy day）先规范化，避免旧字段被写回。
+    const current = withDefaults(raw);
     const next: MvpCharacter = {
       ...current,
       ...patch,

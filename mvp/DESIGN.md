@@ -31,6 +31,11 @@ type Realm = '炼气' | '筑基' | '金丹';
 type SpiritRootKey = 'fire' | 'water' | 'wood' | 'metal' | 'earth' | 'qian' | 'kun';
 type Roots = Record<SpiritRootKey, number>;          // 复用 mvp/absorb.ts，合计 100
 
+interface TimeState {            // v0.2：天为最小单位，不引入时辰/phase
+  day: number;                   // 第几天，从 1 开始
+  tick: number;                  // 累计推进天数
+}
+
 interface MvpCharacter {
   id: string;                    // crypto.randomUUID()
   name: string;
@@ -43,7 +48,7 @@ interface MvpCharacter {
   technique: { name: string; absorbRate: number; convertRate: number };
   eventState: { doneIds: string[]; count: number };
   plotFlags: string[];           // R3 剧情标记，去重累积（2026-11-16 实现期补充）
-  day: number;
+  time: TimeState;
   rngSeed: number;
   saveVersion: 1;
   createdAt: number;             // epoch ms，列表排序用
@@ -52,7 +57,7 @@ interface MvpCharacter {
 
 interface CharacterSummary {     // 列表只读这几个字段，避免拉全量
   id: string; name: string; realm: Realm;
-  cultivation: number; day: number; createdAt: number;
+  cultivation: number; day: number; createdAt: number;   // 摘要仍用扁平 day
 }
 ```
 
@@ -115,6 +120,7 @@ applyOption(character, event, optionIndex): { cultivation, plotFlags, nextSeed }
 | START_TECHNIQUE | 青木诀 `{absorbRate:0.4, convertRate:0.3}` |
 | LOCATIONS | 火山（火200+土30）、灵泉（水200+木50） |
 | EVENT_POOL | 24 条（每境界 8 条，文案 v0.2 已写完），单选项 +5~15 修为或剧情标记 |
+| ACTION_DAYS | 吸收 1 天 / 历练 0 天 / 突破 0 天（事件可用 `days` 覆盖为 2~7 天） |
 
 ## 6. 一个循环的时序
 
@@ -123,17 +129,19 @@ applyOption(character, event, optionIndex): { cultivation, plotFlags, nextSeed }
  → app: repo.get(activeId)
  → domain: absorb(location, roots, technique) → cultivate()
  → character.cultivation = min(cultivation + gain, cultivationMax)
- → character.day += 1 ; rngSeed 推进
+ → time: TimeService.advance(character.time, ACTION_DAYS.absorb, 'absorb') ; rngSeed 推进
  → repo.update() → 渲染
 （修为 ≥ nextThreshold 时，「突破」按钮亮起）
 
 用户点「突破」
  → domain: tryBreakthrough()（20% 失败扣当前修为）
  → 成功：realm+1、修为清零、阈值与上限更新
+ → time: advance(0 天) 只走 action 钩子
  → repo.update() → 渲染
 
 用户点「历练」
  → domain: pickEvent() → 用户选择 → applyOption()
+ → time: advance(event.days ?? ACTION_DAYS.event, 'event')（耗时事件 2~7 天）
  → 修为/剧情标记写入 → repo.update()
 ```
 
@@ -154,6 +162,8 @@ mvp/
 │   ├── systems/cultivate.ts
 │   ├── systems/breakthrough.ts
 │   ├── systems/event.ts
+│   ├── time/types.ts           TimeState / TimeReason / TimeHook
+│   ├── time/time-service.ts    TimeService（逐天推进、钩子排序与隔离）
 │   ├── storage/repository.ts  接口 + 内存实现
 │   ├── storage/indexeddb.ts   IndexedDB 实现
 │   ├── app.ts                 编排
@@ -162,6 +172,7 @@ mvp/
     ├── repository.test.ts     CRUD 全链路（内存实现）
     ├── cultivate.test.ts
     ├── breakthrough.test.ts   成功/失败/阈值递推
+    ├── time.test.ts           0/1/多天推进、钩子顺序与隔离、非法天数
     └── event.test.ts          抽事件、禁空结算、种子可复现
 ```
 

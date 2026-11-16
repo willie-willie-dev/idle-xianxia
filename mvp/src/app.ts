@@ -5,7 +5,7 @@
  * （在 `storage/`）。UI 每点一下按钮，调用这里的一个方法。
  */
 
-import { DAYS_PER_ABSORB } from './data/balance.ts';
+import { ACTION_DAYS } from './data/balance.ts';
 import { DEFAULT_LOCATION_ID, LOCATIONS, findLocation } from './data/locations.ts';
 import { IndexedDbCharacterRepository } from './storage/indexeddb.ts';
 import { MemoryCharacterRepository } from './storage/repository.ts';
@@ -17,6 +17,8 @@ import type { BreakthroughResult } from './types.ts';
 import { cultivate } from './systems/cultivate.ts';
 import { applyOption, pickEvent } from './systems/event.ts';
 import { nextSeed } from './systems/rng.ts';
+import { createTimeService } from './time/time-service.ts';
+import type { TimeService } from './time/time-service.ts';
 import type {
   CharacterSummary,
   GameEvent,
@@ -77,10 +79,12 @@ export function canBreakthrough(character: MvpCharacter): boolean {
 class GameAppImpl implements GameApp {
   readonly locations: readonly Location[] = LOCATIONS;
   #repo: CharacterRepository;
+  #time: TimeService;
   #character: MvpCharacter | null = null;
 
   constructor(repo: CharacterRepository) {
     this.#repo = repo;
+    this.#time = createTimeService();
   }
 
   async list(): Promise<CharacterSummary[]> {
@@ -135,7 +139,7 @@ class GameAppImpl implements GameApp {
 
   /**
    * 吸收一次：灵气 → 修为（R1=A，灵气池只做 UI 明细）。
-   * `day + 1` 与 `rngSeed` 推进都入存档。
+   * 时间推进（`ACTION_DAYS.absorb` 天）与 `rngSeed` 推进都入存档。
    */
   async absorb(locationId?: string): Promise<AbsorbTurn> {
     const character = await this.#require();
@@ -144,10 +148,13 @@ class GameAppImpl implements GameApp {
     const { cultivationGain } = cultivate(absorption);
     const raw = character.cultivation + cultivationGain;
     const cultivation = Math.min(raw, character.cultivationMax);
+    const advanced = this.#time.advance(character.time, ACTION_DAYS.absorb, {
+      kind: 'absorb',
+    });
 
     const updated = await this.#repo.update(character.id, {
       cultivation,
-      day: character.day + DAYS_PER_ABSORB,
+      time: advanced.state,
       rngSeed: nextSeed(character.rngSeed),
     });
     this.#character = updated;
@@ -170,11 +177,18 @@ class GameAppImpl implements GameApp {
       },
       character.rngSeed,
     );
+    // 突破不耗天（0 天），但仍走一遍 action 钩子管线。
+    const advanced = this.#time.advance(
+      character.time,
+      ACTION_DAYS.breakthrough,
+      { kind: 'breakthrough' },
+    );
     const updated = await this.#repo.update(character.id, {
       realm: result.realm,
       cultivation: result.cultivation,
       cultivationMax: result.cultivationMax,
       nextThreshold: result.nextThreshold,
+      time: advanced.state,
       rngSeed: result.nextSeed,
     });
     this.#character = updated;
@@ -210,11 +224,18 @@ class GameAppImpl implements GameApp {
     const base = Array.isArray(character.plotFlags) ? character.plotFlags : [];
     const flags = Array.isArray(outcome.plotFlags) ? outcome.plotFlags : [];
     const plotFlags = flags.length === 0 ? base : Array.from(new Set([...base, ...flags]));
+    // 事件可自带耗时（2~7 天）；没写就按 ACTION_DAYS.event（0 天）。
+    const advanced = this.#time.advance(
+      character.time,
+      event.days ?? ACTION_DAYS.event,
+      { kind: 'event' },
+    );
     const updated = await this.#repo.update(character.id, {
       cultivation: Math.min(outcome.cultivation, character.cultivationMax),
       rngSeed: outcome.nextSeed,
       eventState: { doneIds, count: character.eventState.count + 1 },
       plotFlags,
+      time: advanced.state,
     });
     this.#character = updated;
     return { character: updated, outcome, event };

@@ -107,6 +107,7 @@ export const EVENTS: readonly GameEvent[] = [
     realm: '筑基',
     title: '洞府灵脉',
     text: '新开的洞府里，灵脉在石壁下低鸣，像有活物在土里翻身。',
+    days: 5,
     options: [
       { text: '布一座聚灵阵，就此闭关', cultivationGain: 15 },
       { text: '封了洞府，继续云游', cultivationGain: 8, plotFlag: '云游' },
@@ -159,6 +160,7 @@ export const EVENTS: readonly GameEvent[] = [
     realm: '筑基',
     title: '渡口论道三日',
     text: '一位云游道人坐在渡口石上，说愿与你论道三日，输了的人请酒。',
+    days: 3,
     options: [
       { text: '倾囊相辩，不肯让人', cultivationGain: 15, plotFlag: '论道胜' },
       { text: '只听不语，任他讲完', cultivationGain: 9, plotFlag: '听道' },
@@ -181,6 +183,7 @@ export const EVENTS: readonly GameEvent[] = [
     realm: '筑基',
     title: '雷夜闭关',
     text: '窗外雷声滚过，一层压着一层。你第一次觉得那声音离自己这么近。',
+    days: 2,
     options: [
       { text: '开门，借雷淬体', cultivationGain: 14, plotFlag: '引雷淬体' },
       { text: '收心守一，把雷声关在门外', cultivationGain: 10 },
@@ -193,6 +196,7 @@ export const EVENTS: readonly GameEvent[] = [
     realm: '金丹',
     title: '金丹初转',
     text: '丹田里那颗金丹缓缓转了一圈，整座洞府的灵气都跟着晃了晃。',
+    days: 3,
     options: [
       { text: '以识海温养，一坐三日', cultivationGain: 15 },
       { text: '以剑意淬炼，逼它再快一分', cultivationGain: 10, plotFlag: '剑淬金丹' },
@@ -255,6 +259,7 @@ export const EVENTS: readonly GameEvent[] = [
     realm: '金丹',
     title: '心境失守',
     text: '闭关第七日，妄念一间间推开你识海里的门，每一间里都坐着一个你。',
+    days: 7,
     options: [
       { text: '以剑斩念，一间不留', cultivationGain: 13, plotFlag: '斩妄念' },
       { text: '静观其变，看它要说什么', cultivationGain: 10 },

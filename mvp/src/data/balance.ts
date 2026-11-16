@@ -56,8 +56,15 @@ export const DEFAULT_ELEMENT: WuXing = '木';
 /** 初始天数。 */
 export const INITIAL_DAY = 1;
 
-/** 每次吸收推进的天数（只做叙事节奏，不参与计算）。 */
-export const DAYS_PER_ABSORB = 1;
+/**
+ * 各动作消耗的天数（v0.2：天为最小单位）。
+ * 事件可通过 `GameEvent.days` 覆盖，取 2~7 天。
+ */
+export const ACTION_DAYS = {
+  absorb: 1,
+  event: 0,
+  breakthrough: 0,
+} as const;
 
 /** 初始修为。 */
 export const INITIAL_CULTIVATION = 0;

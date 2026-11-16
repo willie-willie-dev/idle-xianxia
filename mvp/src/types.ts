@@ -6,8 +6,9 @@
  */
 
 import type { Roots } from './systems/absorb.ts';
+import type { TimeState } from './time/types.ts';
 
-export type { Roots };
+export type { Roots, TimeState };
 
 /** 五行主属性。只做展示，暂不参与计算。 */
 export type WuXing = '金' | '木' | '水' | '火' | '土';
@@ -38,6 +39,11 @@ export interface GameEvent {
   realm: Realm;
   title: string;
   text: string;
+  /**
+   * 本次历练耗时天数（2~7）。
+   * 省略时取 `ACTION_DAYS.event`，即不耗天。
+   */
+  days?: number;
   options: EventOption[];
 }
 
@@ -61,7 +67,8 @@ export interface MvpCharacter {
   eventState: EventState;
   /** 剧情标记（R3 的第二类回报），去重累积，写入存档。 */
   plotFlags: string[];
-  day: number;
+  /** 时间状态（v0.2：day 为最小单位）。 */
+  time: TimeState;
   rngSeed: number;
   saveVersion: 1;
   createdAt: number;

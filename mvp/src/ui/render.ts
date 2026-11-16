@@ -157,7 +157,7 @@ export async function bootstrap(): Promise<void> {
     state.character = character;
     el<HTMLElement>('char-name').textContent = character.name;
     el<HTMLElement>('char-realm').textContent = character.realm;
-    el<HTMLElement>('char-day').textContent = String(character.day);
+    el<HTMLElement>('char-day').textContent = String(character.time.day);
     el<HTMLElement>('char-cultivation').textContent = fmt(character.cultivation);
     el<HTMLElement>('char-cultivation-max').textContent = String(character.cultivationMax);
     el<HTMLElement>('char-threshold').textContent = String(character.nextThreshold);
@@ -279,7 +279,7 @@ export async function bootstrap(): Promise<void> {
       const turn = await state.app.absorb(locationSelect.value);
       const tail = turn.capped ? '（已至修为上限）' : '';
       log(
-        `吸收灵气：修为 +${fmt(turn.gain)}${tail}，第 ${turn.character.day} 天`,
+        `吸收灵气：修为 +${fmt(turn.gain)}${tail}，第 ${turn.character.time.day} 天`,
       );
       afterUpdate(turn.character);
     } catch (error) {
