@@ -1,0 +1,430 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>登仙 · MVP</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --ink: #0d1117;
+        --ink-soft: #161c26;
+        --paper: #e8e3d8;
+        --paper-dim: #b9b2a4;
+        --jade: #7fb79a;
+        --gold: #d8b46a;
+        --blood: #c86a5f;
+        --line: #2a3340;
+        --radius: 10px;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+      }
+
+      body {
+        min-height: 100vh;
+        background:
+          radial-gradient(1200px 600px at 15% -10%, #1b2733 0%, transparent 60%),
+          radial-gradient(900px 500px at 100% 0%, #24201a 0%, transparent 55%),
+          var(--ink);
+        color: var(--paper);
+        font-family: 'Noto Serif SC', 'Source Han Serif SC', 'Songti SC', Georgia, serif;
+        line-height: 1.6;
+        padding: 24px 16px 64px;
+      }
+
+      #app {
+        width: min(720px, 100%);
+        margin: 0 auto;
+      }
+
+      .topbar {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 12px;
+        flex-wrap: wrap;
+        margin-bottom: 20px;
+      }
+
+      .topbar h1 {
+        margin: 0;
+        font-size: 22px;
+        letter-spacing: 4px;
+        font-weight: 500;
+      }
+
+      .topbar h1 .sub {
+        margin-left: 10px;
+        font-size: 12px;
+        letter-spacing: 1px;
+        color: var(--paper-dim);
+      }
+
+      .storage-hint {
+        margin: 0;
+        font-size: 12px;
+        color: var(--paper-dim);
+      }
+
+      .panel {
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(0, 0, 0, 0.12));
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        padding: 20px;
+        box-shadow: 0 18px 40px rgba(0, 0, 0, 0.35);
+      }
+
+      .panel h2 {
+        margin: 0 0 12px;
+        font-size: 18px;
+        font-weight: 500;
+        letter-spacing: 2px;
+      }
+
+      .panel h3 {
+        margin: 20px 0 8px;
+        font-size: 14px;
+        font-weight: 500;
+        letter-spacing: 1px;
+        color: var(--paper-dim);
+      }
+
+      .hidden {
+        display: none !important;
+      }
+
+      .create-row {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 16px;
+      }
+
+      input[type='text'],
+      select {
+        flex: 1;
+        min-width: 0;
+        background: var(--ink-soft);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        color: var(--paper);
+        font: inherit;
+        font-size: 14px;
+        padding: 9px 12px;
+      }
+
+      input[type='text']:focus,
+      select:focus {
+        outline: 1px solid var(--jade);
+        border-color: var(--jade);
+      }
+
+      button {
+        font: inherit;
+        font-size: 14px;
+        padding: 9px 16px;
+        border-radius: 8px;
+        border: 1px solid rgba(127, 183, 154, 0.5);
+        background: rgba(127, 183, 154, 0.16);
+        color: var(--paper);
+        cursor: pointer;
+        transition: background 0.15s ease, transform 0.05s ease;
+      }
+
+      button:hover:not(:disabled) {
+        background: rgba(127, 183, 154, 0.28);
+      }
+
+      button:active:not(:disabled) {
+        transform: translateY(1px);
+      }
+
+      button:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+      }
+
+      button.ghost {
+        background: transparent;
+        border-color: var(--line);
+        color: var(--paper-dim);
+      }
+
+      button.danger {
+        background: rgba(200, 106, 95, 0.14);
+        border-color: rgba(200, 106, 95, 0.45);
+        color: #e3a49c;
+      }
+
+      .char-list {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .char-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 12px 14px;
+        background: rgba(255, 255, 255, 0.02);
+      }
+
+      .char-info {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        min-width: 0;
+      }
+
+      .char-item-name {
+        font-size: 16px;
+        letter-spacing: 1px;
+      }
+
+      .char-item-meta {
+        font-size: 12px;
+        color: var(--paper-dim);
+      }
+
+      .char-item-actions {
+        display: flex;
+        gap: 8px;
+        flex: none;
+      }
+
+      .hint {
+        margin: 12px 0 0;
+        font-size: 13px;
+        color: var(--paper-dim);
+      }
+
+      .error {
+        margin: 0 0 12px;
+        font-size: 13px;
+        color: var(--blood);
+        min-height: 1em;
+      }
+
+      .game-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+
+      .game-head h2 {
+        margin: 0;
+        font-size: 20px;
+        letter-spacing: 2px;
+      }
+
+      .meta {
+        margin: 2px 0 0;
+        font-size: 13px;
+        color: var(--paper-dim);
+      }
+
+      .head-actions {
+        display: flex;
+        gap: 8px;
+      }
+
+      .stats {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+        gap: 6px 16px;
+        margin: 16px 0;
+        font-size: 14px;
+        color: var(--paper-dim);
+      }
+
+      .stats span {
+        color: var(--paper);
+      }
+
+      #char-cultivation {
+        color: var(--gold);
+      }
+
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+        padding-top: 4px;
+        border-top: 1px solid var(--line);
+        margin-top: 8px;
+        padding-top: 16px;
+      }
+
+      .location-pick {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 13px;
+        color: var(--paper-dim);
+      }
+
+      .location-pick select {
+        padding: 7px 10px;
+      }
+
+      .event-panel {
+        margin-top: 16px;
+        border: 1px solid rgba(216, 180, 106, 0.35);
+        border-radius: 8px;
+        padding: 14px;
+        background: rgba(216, 180, 106, 0.06);
+      }
+
+      .event-panel h3 {
+        margin: 0 0 6px;
+        color: var(--gold);
+        font-size: 15px;
+        letter-spacing: 1px;
+      }
+
+      .event-panel p {
+        margin: 0 0 12px;
+        font-size: 14px;
+        color: var(--paper-dim);
+      }
+
+      .event-options {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .event-option {
+        text-align: left;
+      }
+
+      .log {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        max-height: 240px;
+        overflow-y: auto;
+        font-size: 13px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
+
+      .log-row {
+        color: var(--paper-dim);
+        border-left: 2px solid var(--line);
+        padding-left: 8px;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+
+      .log-row.good {
+        color: var(--jade);
+        border-left-color: var(--jade);
+      }
+
+      .log-row.bad {
+        color: var(--blood);
+        border-left-color: var(--blood);
+      }
+
+      .log-row.muted {
+        opacity: 0.75;
+      }
+
+      .fatal {
+        margin-bottom: 16px;
+        border: 1px solid var(--blood);
+        border-radius: 8px;
+        padding: 12px;
+        color: var(--blood);
+        font-size: 13px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <header class="topbar">
+        <h1>登仙<span class="sub">MVP 最小可玩循环</span></h1>
+        <p class="storage-hint" id="storage-hint"></p>
+      </header>
+
+      <div id="fatal" class="fatal hidden"></div>
+
+      <!-- 屏 1：角色列表 -->
+      <main id="screen-list" class="screen">
+        <section class="panel">
+          <h2>角色列表</h2>
+          <p class="error" id="list-error"></p>
+          <div class="create-row">
+            <input id="name-input" type="text" maxlength="12" placeholder="道号（如：沈青）" />
+            <button id="btn-create" type="button">新建角色</button>
+          </div>
+          <ul id="char-list" class="char-list"></ul>
+          <p class="hint" id="list-empty">尚无角色，先起一个道号。</p>
+        </section>
+      </main>
+
+      <!-- 屏 2：游戏页 -->
+      <main id="screen-game" class="screen hidden">
+        <section class="panel">
+          <div class="game-head">
+            <div>
+              <h2 id="char-name">—</h2>
+              <p class="meta">
+                <span id="char-realm">炼气</span> · 第 <span id="char-day">1</span> 天
+              </p>
+            </div>
+            <div class="head-actions">
+              <button id="btn-back" type="button" class="ghost">返回列表</button>
+              <button id="btn-delete" type="button" class="danger">删除角色</button>
+            </div>
+          </div>
+
+          <div class="stats">
+            <p>修为：<span id="char-cultivation">0</span> / <span id="char-cultivation-max">400</span></p>
+            <p>突破所需：<span id="char-threshold">100</span></p>
+            <p>五行主属：<span id="char-element">木</span></p>
+            <p>功法：<span id="char-technique">青木诀</span></p>
+          </div>
+
+          <div class="actions">
+            <label class="location-pick">
+              灵地
+              <select id="location-select"></select>
+            </label>
+            <button id="btn-absorb" type="button">吸收灵气</button>
+            <button id="btn-breakthrough" type="button">突破</button>
+            <button id="btn-event" type="button" class="ghost">历练</button>
+          </div>
+
+          <div id="event-panel" class="event-panel hidden">
+            <h3 id="event-title"></h3>
+            <p id="event-text"></p>
+            <div id="event-options" class="event-options"></div>
+          </div>
+
+          <h3>修行日志</h3>
+          <div id="log" class="log"></div>
+        </section>
+      </main>
+    </div>
+
+    <script type="module" src="./src/main.ts"></script>
+  </body>
+</html>
