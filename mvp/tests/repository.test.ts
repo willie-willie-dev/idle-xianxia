@@ -208,3 +208,120 @@ test('withDefaults：老存档只有 day 时迁移成 time，并删掉旧字段'
   assert.deepEqual(migrated.time, { day: 12, tick: 11 }); // tick = day - 1
   assert.equal('day' in migrated, false);
 });
+
+test('create：缺键灵根抛错且不落库', async () => {
+  const repo = new MemoryCharacterRepository();
+  // 去掉 kun，并把 qian 加上这 10 点：其余键加起来正好 100。
+  // 旧实现会把缺键加成 NaN，合计比较被绕过。
+  const spiritRoots = { ...DEFAULT_ROOTS, qian: 25 } as Partial<typeof DEFAULT_ROOTS>;
+  delete spiritRoots.kun;
+
+  await assert.rejects(
+    () => repo.create({ name: '缺坤', spiritRoots: spiritRoots as typeof DEFAULT_ROOTS }),
+    /灵根 kun 必须是非负有限数/,
+  );
+  assert.equal((await repo.list()).length, 0);
+});
+
+test('update：外部 push 不影响存档', async () => {
+  const repo = new MemoryCharacterRepository();
+  const created = await repo.create({ name: '沈青' });
+
+  const inventory: MvpCharacter['inventory'] = [
+    {
+      uid: 'u-qingmu',
+      kind: 'technique',
+      techniqueId: 'qingmu',
+      fromEventId: 'evt-1',
+      obtainedAt: 1,
+    },
+  ];
+  const techniques: (string | null)[] = ['qingmu', null, null];
+  const time = { day: 4, tick: 3 };
+  const spiritRoots = { ...DEFAULT_ROOTS };
+  const eventState = { doneIds: ['e1'], count: 1 };
+  const plotFlags = ['flag-a'];
+
+  await repo.update(created.id, {
+    inventory,
+    techniques,
+    time,
+    spiritRoots,
+    eventState,
+    plotFlags,
+  });
+
+  inventory.push({
+    uid: 'u-extra',
+    kind: 'technique',
+    techniqueId: 'liehuo',
+    fromEventId: 'evt-2',
+    obtainedAt: 2,
+  });
+  inventory[0].fromEventId = 'tampered';
+  techniques.push('liehuo');
+  techniques[0] = 'liehuo';
+  time.day = 99;
+  spiritRoots.fire = 0;
+  eventState.doneIds.push('e2');
+  eventState.count = 9;
+  plotFlags.push('flag-b');
+
+  const loaded = await repo.get(created.id);
+  assert.deepEqual(loaded?.inventory, [
+    {
+      uid: 'u-qingmu',
+      kind: 'technique',
+      techniqueId: 'qingmu',
+      fromEventId: 'evt-1',
+      obtainedAt: 1,
+    },
+  ]);
+  assert.deepEqual(loaded?.techniques, ['qingmu', null, null]);
+  assert.deepEqual(loaded?.time, { day: 4, tick: 3 });
+  assert.equal(loaded?.spiritRoots.fire, DEFAULT_ROOTS.fire);
+  assert.deepEqual(loaded?.eventState, { doneIds: ['e1'], count: 1 });
+  assert.deepEqual(loaded?.plotFlags, ['flag-a']);
+});
+
+test('get / list 之后存档对象未被改写', async () => {
+  const createdRepo = new MemoryCharacterRepository();
+  const created = await createdRepo.create({ name: '旧档' });
+  const stored = { ...created } as unknown as Record<string, unknown>;
+  stored.day = 12;
+  delete stored.time;
+  const snapshot = JSON.stringify(stored);
+
+  const migrated = withDefaults(stored as unknown as MvpCharacter);
+  assert.equal(JSON.stringify(stored), snapshot);
+  assert.deepEqual(migrated.time, { day: 12, tick: 11 });
+  assert.equal('day' in migrated, false);
+
+  const repo = new MemoryCharacterRepository([[created.id, stored as unknown as MvpCharacter]]);
+  const loaded = await repo.get(created.id);
+  const summaries = await repo.list();
+
+  assert.equal(JSON.stringify(stored), snapshot);
+  assert.equal('time' in stored, false);
+  assert.equal(stored.day, 12);
+  assert.notEqual(loaded, null);
+  assert.deepEqual(loaded?.time, { day: 12, tick: 11 });
+  assert.equal('day' in loaded!, false);
+  assert.equal(summaries[0]?.day, 12);
+});
+
+test('get：迁移补进的 inventory uid 连续两次读取相同', async () => {
+  const repo = new MemoryCharacterRepository();
+  const created = await repo.create({ name: '沈青' });
+  await repo.update(created.id, {
+    techniques: ['qingmu', null, null],
+    inventory: [],
+  });
+
+  const first = await repo.get(created.id);
+  const second = await repo.get(created.id);
+
+  assert.equal(first?.inventory[0].uid, second?.inventory[0].uid);
+  assert.equal(first?.inventory[0].uid, 'migrated-qingmu');
+  assert.equal(second?.inventory[0].uid, 'migrated-qingmu');
+});

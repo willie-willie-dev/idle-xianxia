@@ -52,28 +52,38 @@ export interface CharacterRepository {
   setActiveId(id: string | null): Promise<void>;
 }
 
-/** 灵根合计。 */
-export function rootsSum(roots: Roots): number {
-  return (
-    roots.metal +
-    roots.wood +
-    roots.water +
-    roots.fire +
-    roots.earth +
-    roots.qian +
-    roots.kun
-  );
+/** 灵根 7 键，缺一不可。合计只加这些键，避免漏键变成 NaN 后比较失效。 */
+const ROOT_KEYS = ['metal', 'wood', 'water', 'fire', 'earth', 'qian', 'kun'] as const satisfies readonly (keyof Roots)[];
+
+function assertRootNumber(key: string, value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+    throw new Error(`灵根 ${key} 必须是非负有限数（当前 ${String(value)}）`);
+  }
+  return value;
 }
 
-/** 校验灵根：每项有限且非负，合计 = 100（±0.01）；不合规直接抛错，不落库。 */
+/** 灵根合计。7 个键都必须在，且都是有限非负数；缺键直接抛错，不返回 NaN。 */
+export function rootsSum(roots: Roots): number {
+  let sum = 0;
+  for (const key of ROOT_KEYS) {
+    const value =
+      roots !== null && typeof roots === 'object' && Object.hasOwn(roots, key)
+        ? roots[key]
+        : undefined;
+    sum += assertRootNumber(key, value);
+  }
+  return sum;
+}
+
+/** 校验灵根：7 个键都在、都是有限非负数，合计 = 100（±0.01）；不合规直接抛错，不落库。 */
 export function assertRootsValid(roots: Roots): void {
-  for (const [key, value] of Object.entries(roots)) {
-    if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
-      throw new Error(`灵根 ${key} 必须是非负有限数（当前 ${String(value)}）`);
+  if (roots !== null && typeof roots === 'object') {
+    for (const [key, value] of Object.entries(roots)) {
+      assertRootNumber(key, value);
     }
   }
   const sum = rootsSum(roots);
-  if (Math.abs(sum - ROOTS_SUM_TARGET) > ROOTS_SUM_TOLERANCE) {
+  if (!Number.isFinite(sum) || Math.abs(sum - ROOTS_SUM_TARGET) > ROOTS_SUM_TOLERANCE) {
     throw new Error(
       `灵根合计必须为 ${ROOTS_SUM_TARGET}（±${ROOTS_SUM_TOLERANCE}），当前 ${sum}`,
     );
@@ -229,16 +239,21 @@ function normalizeInventory(character: MvpCharacter): InventoryItem[] {
   return items;
 }
 
-/** 老存档补齐后加的字段（无迁移脚本时的兜底）。 */
+/**
+ * 老存档补齐后加的字段（无迁移脚本时的兜底）。
+ *
+ * 先拷贝再迁移，不改传入对象；迁移结果与原先就地补齐一致。
+ */
 export function withDefaults(character: MvpCharacter): MvpCharacter {
-  if (!Array.isArray(character.plotFlags)) character.plotFlags = [];
-  if (!Array.isArray(character.eventState?.doneIds)) {
-    character.eventState = { doneIds: [], count: character.eventState?.count ?? 0 };
+  const next = clone(character);
+  if (!Array.isArray(next.plotFlags)) next.plotFlags = [];
+  if (!Array.isArray(next.eventState?.doneIds)) {
+    next.eventState = { doneIds: [], count: next.eventState?.count ?? 0 };
   }
-  migrateTime(character);
-  migrateTechniques(character);
-  migrateStage(character);
-  return character;
+  migrateTime(next);
+  migrateTechniques(next);
+  migrateStage(next);
+  return next;
 }
 
 /**
@@ -271,7 +286,7 @@ function migrateTechniques(character: MvpCharacter): void {
     if (id === null) continue;
     if (inventory.some((item) => item.techniqueId === id)) continue;
     inventory.push({
-      uid: crypto.randomUUID(),
+      uid: `migrated-${id}`,
       kind: 'technique',
       techniqueId: id,
       fromEventId: 'migrated',
@@ -348,7 +363,7 @@ function compareSummary(a: CharacterSummary, b: CharacterSummary): number {
   return a.id < b.id ? 1 : -1;
 }
 
-/** 合并 patch：id / createdAt 不可改，updatedAt 强制刷新。 */
+/** 合并 patch：id / createdAt 不可改，updatedAt 强制刷新。嵌套字段深拷贝后再入库。 */
 function mergePatch(
   current: MvpCharacter,
   patch: Partial<MvpCharacter>,
@@ -361,22 +376,36 @@ function mergePatch(
     createdAt: current.createdAt,
     updatedAt: now,
   };
+  next.inventory = clone(next.inventory);
+  next.techniques = clone(next.techniques);
+  next.time = clone(next.time);
+  next.spiritRoots = clone(next.spiritRoots);
+  next.eventState = clone(next.eventState);
+  next.plotFlags = clone(next.plotFlags);
   return next;
 }
 
 /** 内存实现：单测用，行为与 IndexedDB 版对齐。 */
 export class MemoryCharacterRepository implements CharacterRepository {
-  #items: Map<string, MvpCharacter> = new Map();
+  #items: Map<string, MvpCharacter>;
   #activeId: string | null = null;
 
+  /** `initial` 按引用放入仓库（缺省空表），测试用来核对读路径没有改写原对象。 */
+  constructor(initial?: Iterable<readonly [string, MvpCharacter]>) {
+    this.#items = initial === undefined ? new Map() : new Map(initial);
+  }
+
   async list(): Promise<CharacterSummary[]> {
-    // list 也过一遍 withDefaults：老存档缺 time 时不能把整个列表打挂。
-    return [...this.#items.values()].map(withDefaults).map(summarize).sort(compareSummary);
+    // 先拷贝再补默认值：老存档缺 time 时列表仍可读，且不改仓库里的原对象。
+    return [...this.#items.values()]
+      .map((item) => withDefaults(clone(item)))
+      .map(summarize)
+      .sort(compareSummary);
   }
 
   async get(id: string): Promise<MvpCharacter | null> {
     const found = this.#items.get(id);
-    return found === undefined ? null : clone(withDefaults(found));
+    return found === undefined ? null : withDefaults(clone(found));
   }
 
   async create(input: CreateCharacterInput): Promise<MvpCharacter> {
