@@ -3,8 +3,8 @@ import { test } from 'node:test';
 
 import {
   DEFAULT_ROOTS,
-  REALM_THRESHOLDS,
   START_TECHNIQUE,
+  nextThresholdOf,
 } from '../src/data/balance.ts';
 import {
   DEFAULT_LOCATION_ID,
@@ -67,7 +67,7 @@ test('cultivate：不返回负数 / NaN', () => {
 test('节奏验算：约 10 次吸收攒满筑基阈值 100', () => {
   const perTurn = cultivate(absorb(VOLCANO, DEFAULT_ROOTS, START_TECHNIQUE))
     .cultivationGain;
-  const threshold = REALM_THRESHOLDS['筑基'];
+  const threshold = nextThresholdOf('炼气', '前期');
   assert.ok(perTurn * 9 < threshold, `9 次应不到 ${threshold}`);
   assert.ok(perTurn * 10 >= threshold, `10 次应超过 ${threshold}`);
 });

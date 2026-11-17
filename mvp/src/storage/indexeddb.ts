@@ -65,6 +65,7 @@ function summarize(character: MvpCharacter): CharacterSummary {
     id: character.id,
     name: character.name,
     realm: character.realm,
+    stage: character.stage,
     cultivation: character.cultivation,
     day: character.time.day,
     createdAt: character.createdAt,

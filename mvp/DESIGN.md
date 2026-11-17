@@ -28,6 +28,8 @@ UI (index.html + src/ui/*)        只做渲染与事件绑定，不含规则
 ```ts
 type WuXing = '金' | '木' | '水' | '火' | '土';
 type Realm = '炼气' | '筑基' | '金丹';
+type RealmStage = '前期' | '中期' | '后期';        // 9 阶 = 3 境界 × 3 阶
+type TechniqueId = 'qingmu' | 'liehuo' | 'houtu' | 'gengjin' | 'xuanshui';
 type SpiritRootKey = 'fire' | 'water' | 'wood' | 'metal' | 'earth' | 'qian' | 'kun';
 type Roots = Record<SpiritRootKey, number>;          // 复用 mvp/absorb.ts，合计 100
 
@@ -42,10 +44,12 @@ interface MvpCharacter {
   spiritRoots: Roots;
   element: WuXing;
   realm: Realm;
+  stage: RealmStage;             // 境界内阶位，展示为「炼气·中期」
   cultivation: number;
   cultivationMax: number;
-  nextThreshold: number;
-  technique: { name: string; absorbRate: number; convertRate: number };
+  nextThreshold: number;         // 进入下一阶所需修为；顶阶 = 自身阈值
+  techniques: Technique[];       // 功法三槽，长度恒为 3（不再有单 technique 字段）
+  activeSlot: 0 | 1 | 2;         // 当前生效槽位，吸收只用 techniques[activeSlot]
   eventState: { doneIds: string[]; count: number };
   plotFlags: string[];           // R3 剧情标记，去重累积（2026-11-16 实现期补充）
   time: TimeState;
@@ -56,7 +60,7 @@ interface MvpCharacter {
 }
 
 interface CharacterSummary {     // 列表只读这几个字段，避免拉全量
-  id: string; name: string; realm: Realm;
+  id: string; name: string; realm: Realm; stage: RealmStage;
   cultivation: number; day: number; createdAt: number;   // 摘要仍用扁平 day
 }
 ```
@@ -98,9 +102,10 @@ interface CharacterRepository {
 cultivate(absorbResult): { cultivationGain: number }
 
 // 突破：输入 cultivation / nextThreshold / rng → 结果
-tryBreakthrough({cultivation, nextThreshold, realm}, rngSeed): {
+tryBreakthrough({cultivation, nextThreshold, realm, stage}, rngSeed): {
   success: boolean;
-  realm: Realm; cultivation: number; cultivationMax: number; nextThreshold: number;
+  realm: Realm; stage: RealmStage;
+  cultivation: number; cultivationMax: number; nextThreshold: number;
   lost: number;               // 失败扣除量
   nextSeed: number;           // 线性同余，保证可复现
 }
@@ -114,20 +119,51 @@ applyOption(character, event, optionIndex): { cultivation, plotFlags, nextSeed }
 
 | 常量 | 值 |
 |---|---|
-| REALMS | 炼气 0 / 筑基 100 / 金丹 500（上限 = 下一阈值 × 4） |
-| FAIL_LOSS_RATE | 0.20 |
+| FAIL_LOSS_RATE | 0.20（失败扣当前修为，阶位不变） |
 | DEFAULT_ROOTS | 乾15 坤10 五行各15 |
-| START_TECHNIQUE | 青木诀 `{absorbRate:0.4, convertRate:0.3}` |
 | LOCATIONS | 火山（火200+土30）、灵泉（水200+木50） |
 | EVENT_POOL | 24 条（每境界 8 条，文案 v0.2 已写完），单选项 +5~15 修为或剧情标记 |
 | ACTION_DAYS | 吸收 1 天 / 历练 0 天 / 突破 0 天（事件可用 `days` 覆盖为 2~7 天） |
+
+**阶位表（`STAGE_TABLE`，9 项，索引即阶位）**：
+
+| # | 阶位 | 进入所需修为 | 本阶上限 |
+|---|---|---|---|
+| 0 | 炼气·前期 | 0 | 400 |
+| 1 | 炼气·中期 | 100 | 960 |
+| 2 | 炼气·后期 | 240 | 1720 |
+| 3 | 筑基·前期 | 430 | 2800 |
+| 4 | 筑基·中期 | 700 | 4320 |
+| 5 | 筑基·后期 | 1080 | 6400 |
+| 6 | 金丹·前期 | 1600 | 9200 |
+| 7 | 金丹·中期 | 2300 | 12800 |
+| 8 | 金丹·后期 | 3200 | 12800（顶阶，自身阈值 ×4） |
+
+- `nextThreshold` = 下一阶阈值；顶阶回落到自身阈值。
+- 本阶上限 = 下一阶阈值 × 4（`CULTIVATION_MAX_FACTOR`）。
+- 突破成功：阶位 +1（前期→中期→后期→下一境界·前期），`cultivation -= nextThreshold`（不为负）。
+- 突破失败：扣当前修为 20%，阶位不变；顶阶再突破：失败、不扣、保持原状。
+
+**功法库（`TECHNIQUE_LIBRARY`，综合效率 = absorbRate × convertRate）**：
+
+| id | 名称 | absorbRate | convertRate | 综合效率 |
+|---|---|---|---|---|
+| `qingmu` | 青木诀 | 0.40 | 0.30 | 0.120 |
+| `liehuo` | 烈火诀 | 0.60 | 0.25 | 0.150 |
+| `houtu` | 厚土诀 | 0.35 | 0.50 | 0.175 |
+| `gengjin` | 庚金诀 | 0.50 | 0.40 | 0.200 |
+| `xuanshui` | 玄水诀 | 0.25 | 0.90 | 0.225 |
+
+- 默认三槽：`[青木诀, 烈火诀, 厚土诀]`，`activeSlot = 0`（`START_TECHNIQUE` = 青木诀）。
+- `app.setActiveSlot(index)` 切换生效槽位；`app.setSlotTechnique(slot, id)` 从库里换功法（未知 id / 槽位越界抛错）。
+- 老存档迁移：缺 `stage` → 前期；缺 `techniques` → 由旧 `technique` 生成 `[旧功法, 烈火诀, 厚土诀]`；两者都缺 → 默认三槽；随后删除旧 `technique` 字段。
 
 ## 6. 一个循环的时序
 
 ```
 用户点「吸收」
  → app: repo.get(activeId)
- → domain: absorb(location, roots, technique) → cultivate()
+ → domain: absorb(location, roots, techniques[activeSlot]) → cultivate()
  → character.cultivation = min(cultivation + gain, cultivationMax)
  → time: TimeService.advance(character.time, ACTION_DAYS.absorb, 'absorb') ; rngSeed 推进
  → repo.update() → 渲染
@@ -135,7 +171,7 @@ applyOption(character, event, optionIndex): { cultivation, plotFlags, nextSeed }
 
 用户点「突破」
  → domain: tryBreakthrough()（20% 失败扣当前修为）
- → 成功：realm+1、修为清零、阈值与上限更新
+ → 成功：阶位 +1（realm/stage 一起推进）、修为扣阈值、阈值与上限更新
  → time: advance(0 天) 只走 action 钩子
  → repo.update() → 渲染
 
@@ -172,6 +208,8 @@ mvp/
     ├── repository.test.ts     CRUD 全链路（内存实现）
     ├── cultivate.test.ts
     ├── breakthrough.test.ts   成功/失败/阈值递推
+    ├── stage.test.ts          9 阶阈值表、逐阶推进、顶阶、失败扣 20%
+    ├── technique.test.ts      三槽默认值、换功法产出、迁移
     ├── time.test.ts           0/1/多天推进、钩子顺序与隔离、非法天数
     └── event.test.ts          抽事件、禁空结算、种子可复现
 ```
@@ -186,7 +224,7 @@ mvp/
 ## 9. 验收（人肉，最后一关）
 
 1. 新建角色 → 出现在列表 → 进入游戏
-2. 连点吸收 8–12 次 → 修为到 100 → 突破成功 → 境界变筑基
+2. 连点吸收 8–12 次 → 修为到 100 → 突破成功 → 阶位变「炼气·中期」
 3. 刷新浏览器 → 角色与进度还在
 4. 删除角色 → 列表消失、`activeId` 清空
 5. 断网（或直接 file:// 打开）不报错

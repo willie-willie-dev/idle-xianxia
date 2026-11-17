@@ -5,7 +5,13 @@
  * （在 `storage/`）。UI 每点一下按钮，调用这里的一个方法。
  */
 
-import { ACTION_DAYS } from './data/balance.ts';
+import {
+  ACTION_DAYS,
+  assertTechniqueSlot,
+  nextStageOf,
+  techniqueById,
+  toTechnique,
+} from './data/balance.ts';
 import { DEFAULT_LOCATION_ID, LOCATIONS, findLocation } from './data/locations.ts';
 import { IndexedDbCharacterRepository } from './storage/indexeddb.ts';
 import { MemoryCharacterRepository } from './storage/repository.ts';
@@ -68,12 +74,19 @@ export interface GameApp {
   breakthrough(): Promise<BreakthroughTurn>;
   drawEvent(): Promise<DrawEventTurn>;
   resolveEvent(event: GameEvent, optionIndex: number): Promise<EventTurn>;
+  /** 切换生效功法槽位（0 / 1 / 2），吸收立即改用新功法。 */
+  setActiveSlot(index: number): Promise<MvpCharacter>;
+  /** 把第 slot 槽换成功法库里的某条（未知 id / 槽位越界抛错）。 */
+  setSlotTechnique(slot: number, techniqueId: string): Promise<MvpCharacter>;
   remove(id: string): Promise<void>;
 }
 
 /** 修为达到阈值、且还没到顶阶时，才可以点突破。 */
 export function canBreakthrough(character: MvpCharacter): boolean {
-  return character.realm !== '金丹' && character.cultivation >= character.nextThreshold;
+  return (
+    nextStageOf(character.realm, character.stage) !== null &&
+    character.cultivation >= character.nextThreshold
+  );
 }
 
 class GameAppImpl implements GameApp {
@@ -144,7 +157,11 @@ class GameAppImpl implements GameApp {
   async absorb(locationId?: string): Promise<AbsorbTurn> {
     const character = await this.#require();
     const location = findLocation(locationId ?? DEFAULT_LOCATION_ID);
-    const absorption = absorb(location, character.spiritRoots, character.technique);
+    const absorption = absorb(
+      location,
+      character.spiritRoots,
+      character.techniques[character.activeSlot] ?? character.techniques[0],
+    );
     const { cultivationGain } = cultivate(absorption);
     const raw = character.cultivation + cultivationGain;
     const cultivation = Math.min(raw, character.cultivationMax);
@@ -166,7 +183,7 @@ class GameAppImpl implements GameApp {
     };
   }
 
-  /** 尝试突破；成功则境界 +1、修为扣阈值、阈值与上限按 balance 重算。 */
+  /** 尝试突破；成功则阶位 +1、修为扣阈值、阈值与上限按新阶位重算。 */
   async breakthrough(): Promise<BreakthroughTurn> {
     const character = await this.#require();
     const result = tryBreakthrough(
@@ -174,6 +191,7 @@ class GameAppImpl implements GameApp {
         cultivation: character.cultivation,
         nextThreshold: character.nextThreshold,
         realm: character.realm,
+        stage: character.stage,
       },
       character.rngSeed,
     );
@@ -185,6 +203,7 @@ class GameAppImpl implements GameApp {
     );
     const updated = await this.#repo.update(character.id, {
       realm: result.realm,
+      stage: result.stage,
       cultivation: result.cultivation,
       cultivationMax: result.cultivationMax,
       nextThreshold: result.nextThreshold,
@@ -239,6 +258,31 @@ class GameAppImpl implements GameApp {
     });
     this.#character = updated;
     return { character: updated, outcome, event };
+  }
+
+  /** 切换生效槽位；吸收始终用 `techniques[activeSlot]`。 */
+  async setActiveSlot(index: number): Promise<MvpCharacter> {
+    const character = await this.#require();
+    assertTechniqueSlot(index);
+    const updated = await this.#repo.update(character.id, { activeSlot: index });
+    this.#character = updated;
+    return updated;
+  }
+
+  /** 换槽位功法：从功法库按 id 取，未知 id / 槽位越界直接抛错。 */
+  async setSlotTechnique(
+    slot: number,
+    techniqueId: string,
+  ): Promise<MvpCharacter> {
+    const character = await this.#require();
+    assertTechniqueSlot(slot);
+    const def = techniqueById(techniqueId);
+    const techniques = character.techniques.map((current, index) =>
+      index === slot ? toTechnique(def) : current,
+    );
+    const updated = await this.#repo.update(character.id, { techniques });
+    this.#character = updated;
+    return updated;
   }
 
   async remove(id: string): Promise<void> {

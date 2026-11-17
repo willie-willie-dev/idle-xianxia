@@ -4,8 +4,8 @@ import { test } from 'node:test';
 import {
   DEFAULT_ROOTS,
   INITIAL_CULTIVATION_MAX,
-  REALM_THRESHOLDS,
-  START_TECHNIQUE,
+  defaultTechniques,
+  nextThresholdOf,
 } from '../src/data/balance.ts';
 import { MemoryCharacterRepository, withDefaults } from '../src/storage/repository.ts';
 import type { MvpCharacter } from '../src/types.ts';
@@ -40,6 +40,7 @@ test('全链路：create → list → get → update → remove → activeId', a
       'id',
       'name',
       'realm',
+      'stage',
     ]);
   }
   assert.equal(summaries[0].id, third.id);
@@ -109,10 +110,13 @@ test('create：缺省值全部来自 balance.ts', async () => {
 
   assert.equal(character.name, '沈青');
   assert.deepEqual(character.spiritRoots, DEFAULT_ROOTS);
-  assert.deepEqual(character.technique, START_TECHNIQUE);
+  assert.deepEqual(character.techniques, defaultTechniques());
+  assert.equal(character.techniques.length, 3);
+  assert.equal(character.activeSlot, 0);
   assert.equal(character.realm, '炼气');
+  assert.equal(character.stage, '前期');
   assert.equal(character.cultivation, 0);
-  assert.equal(character.nextThreshold, REALM_THRESHOLDS['筑基']);
+  assert.equal(character.nextThreshold, nextThresholdOf('炼气', '前期'));
   assert.equal(character.cultivationMax, INITIAL_CULTIVATION_MAX);
   assert.deepEqual(character.eventState, { doneIds: [], count: 0 });
   assert.equal(character.time.day, 1);

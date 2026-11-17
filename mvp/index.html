@@ -296,6 +296,62 @@
         transition: width 0.2s ease;
       }
 
+
+      .technique-block {
+        margin: 0 0 16px;
+      }
+
+      .technique-head {
+        margin: 0 0 6px;
+        font-size: 13px;
+        color: var(--paper-dim);
+      }
+
+      .technique-slots {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+
+      .technique-slot {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .slot-button {
+        flex: 1 1 auto;
+        min-width: 0;
+        text-align: left;
+        padding: 7px 12px;
+        font-size: 14px;
+        border-color: var(--line);
+        background: rgba(255, 255, 255, 0.03);
+        color: var(--paper-dim);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .slot-button.is-active {
+        border-color: rgba(216, 180, 106, 0.55);
+        background: rgba(216, 180, 106, 0.12);
+        color: var(--gold);
+        font-weight: 500;
+      }
+
+      .slot-button.is-active::after {
+        content: ' · 生效';
+        font-size: 12px;
+        opacity: 0.8;
+      }
+
+      .slot-select {
+        flex: 0 0 132px;
+        padding: 6px 8px;
+        font-size: 13px;
+      }
+
       .roots-row {
         display: flex;
         flex-wrap: wrap;
@@ -459,7 +515,7 @@
             <div>
               <h2 id="char-name">—</h2>
               <p class="meta">
-                <span id="char-realm">炼气</span> · 第 <span id="char-day">1</span> 天
+                <span id="char-realm">炼气·前期</span> · 第 <span id="char-day">1</span> 天
               </p>
             </div>
             <div class="head-actions">
@@ -472,7 +528,14 @@
             <p>修为：<span id="char-cultivation">0</span> / <span id="char-cultivation-max">400</span></p>
             <p>突破所需：<span id="char-threshold">100</span></p>
             <p>五行主属：<span id="char-element">木</span></p>
-            <p>功法：<span id="char-technique">青木诀</span></p>
+            <p>阶位：<span id="char-stage">前期</span></p>
+          </div>
+
+          <div class="technique-block">
+            <p class="technique-head">
+              功法（点击槽位切换生效，下拉更换功法）
+            </p>
+            <div id="technique-slots" class="technique-slots" aria-label="功法三槽位"></div>
           </div>
 
           <div class="char-progress">

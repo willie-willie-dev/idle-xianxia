@@ -7,9 +7,24 @@
 
 import { canBreakthrough, createBrowserApp } from '../app.ts';
 import type { GameApp } from '../app.ts';
-import type { CharacterSummary, GameEvent, MvpCharacter, Roots } from '../types.ts';
+import {
+  TECHNIQUE_LIBRARY,
+  TECHNIQUE_SLOT_COUNT,
+  nextStageOf,
+  stageLabel,
+} from '../data/balance.ts';
+import type {
+  CharacterSummary,
+  GameEvent,
+  MvpCharacter,
+  Roots,
+  TechniqueSlot,
+} from '../types.ts';
 
 const LOG_LIMIT = 60;
+
+/** 槽位序号：① ② ③。 */
+const SLOT_MARKS: readonly string[] = ['①', '②', '③'];
 
 /** 灵根七通道的展示顺序与中文名（键与 `Roots` 一致）。 */
 const ROOT_LABELS: readonly (readonly [keyof Roots, string])[] = [
@@ -91,6 +106,7 @@ export async function bootstrap(): Promise<void> {
   const btnBreakthrough = el<HTMLButtonElement>('btn-breakthrough');
   const btnEvent = el<HTMLButtonElement>('btn-event');
   const charRoots = el<HTMLElement>('char-roots');
+  const techniqueSlots = el<HTMLElement>('technique-slots');
   const charProgress = el<HTMLElement>('char-progress');
   const charProgressBar = el<HTMLElement>('char-progress-bar');
 
@@ -133,6 +149,63 @@ export async function bootstrap(): Promise<void> {
   }
 
   /**
+   * 功法三槽：一行三个按钮（当前生效高亮）+ 每槽右侧一个功法库下拉。
+   * 点击按钮 = setActiveSlot；改下拉 = setSlotTechnique。
+   */
+  function renderTechniqueSlots(character: MvpCharacter): void {
+    clear(techniqueSlots);
+    for (let index = 0; index < TECHNIQUE_SLOT_COUNT; index += 1) {
+      const slot = index as TechniqueSlot;
+      const current = character.techniques[slot];
+      const active = character.activeSlot === slot;
+
+      const row = make('div', active ? 'technique-slot is-active' : 'technique-slot');
+
+      const button = make(
+        'button',
+        active ? 'slot-button is-active' : 'slot-button',
+        `${SLOT_MARKS[index] ?? String(index)}${current.name}`,
+      );
+      button.type = 'button';
+      button.id = `slot-${index}`;
+      button.title = active
+        ? `当前生效：${current.name}`
+        : `点击让「${current.name}」生效`;
+      button.addEventListener('click', () => {
+        void chooseSlot(slot);
+      });
+
+      const select = make('select', 'slot-select');
+      select.id = `slot-select-${index}`;
+      select.title = '更换该槽功法';
+      // 老存档的槽 0 可能是库外功法：先放一条只读选项，避免下拉乱指。
+      const known = TECHNIQUE_LIBRARY.some((def) => def.name === current.name);
+      if (!known) {
+        const legacy = make('option', undefined, `${current.name}（库外）`);
+        legacy.value = '';
+        legacy.selected = true;
+        select.append(legacy);
+      }
+      for (const def of TECHNIQUE_LIBRARY) {
+        const option = make(
+          'option',
+          undefined,
+          `${def.name}（${(def.absorbRate * def.convertRate).toFixed(3)}）`,
+        );
+        option.value = def.id;
+        if (def.name === current.name) option.selected = true;
+        select.append(option);
+      }
+      select.addEventListener('change', () => {
+        void chooseTechnique(slot, select.value);
+      });
+
+      row.append(button, select);
+      techniqueSlots.append(row);
+    }
+  }
+
+  /**
    * 修为进度：条宽 = cultivation / nextThreshold。
    * 突破成功时 cultivation 已被扣掉旧阈值，所以这里天然显示「余下修为 / 新阈值」。
    */
@@ -156,24 +229,55 @@ export async function bootstrap(): Promise<void> {
   function renderGame(character: MvpCharacter): void {
     state.character = character;
     el<HTMLElement>('char-name').textContent = character.name;
-    el<HTMLElement>('char-realm').textContent = character.realm;
+    el<HTMLElement>('char-realm').textContent = stageLabel(
+      character.realm,
+      character.stage,
+    );
+    el<HTMLElement>('char-stage').textContent = character.stage;
     el<HTMLElement>('char-day').textContent = String(character.time.day);
     el<HTMLElement>('char-cultivation').textContent = fmt(character.cultivation);
     el<HTMLElement>('char-cultivation-max').textContent = String(character.cultivationMax);
     el<HTMLElement>('char-threshold').textContent = String(character.nextThreshold);
     el<HTMLElement>('char-element').textContent = character.element;
-    el<HTMLElement>('char-technique').textContent = character.technique.name;
     renderRoots(character);
+    renderTechniqueSlots(character);
     renderProgress(character);
 
+    const top = nextStageOf(character.realm, character.stage) === null;
     const ready = canBreakthrough(character);
     btnBreakthrough.disabled = !ready;
-    btnBreakthrough.textContent = character.realm === '金丹' ? '已至金丹' : '突破';
-    btnBreakthrough.title = ready
-      ? '修为已足，可尝试突破'
-      : character.realm === '金丹'
-        ? '金丹是 MVP 的顶阶'
+    btnBreakthrough.textContent = top ? '已至顶阶' : '突破';
+    btnBreakthrough.title = top
+      ? `${stageLabel(character.realm, character.stage)}是 MVP 的顶阶`
+      : ready
+        ? '修为已足，可尝试突破'
         : `还差 ${fmt(character.nextThreshold - character.cultivation)} 修为`;
+  }
+
+  /** 点击槽位按钮：切换生效功法。 */
+  async function chooseSlot(slot: TechniqueSlot): Promise<void> {
+    try {
+      const character = await state.app.setActiveSlot(slot);
+      log(`切换功法：「${character.techniques[slot].name}」生效。`, 'muted');
+      renderGame(character);
+    } catch (error) {
+      logError(error);
+    }
+  }
+
+  /** 改槽位下拉：把该槽换成功法库里的另一条。 */
+  async function chooseTechnique(
+    slot: TechniqueSlot,
+    techniqueId: string,
+  ): Promise<void> {
+    if (techniqueId === '') return;
+    try {
+      const character = await state.app.setSlotTechnique(slot, techniqueId);
+      log(`第 ${slot + 1} 槽换为「${character.techniques[slot].name}」。`, 'muted');
+      renderGame(character);
+    } catch (error) {
+      logError(error);
+    }
   }
 
   function renderCharList(summaries: readonly CharacterSummary[]): void {
@@ -185,7 +289,11 @@ export async function bootstrap(): Promise<void> {
       const info = make('div', 'char-info');
       info.append(
         make('strong', 'char-item-name', summary.name),
-        make('span', 'char-item-meta', `${summary.realm} · 修为 ${fmt(summary.cultivation)} · 第 ${summary.day} 天`),
+        make(
+          'span',
+          'char-item-meta',
+          `${stageLabel(summary.realm, summary.stage)} · 修为 ${fmt(summary.cultivation)} · 第 ${summary.day} 天`,
+        ),
       );
 
       const actions = make('div', 'char-item-actions');
@@ -219,7 +327,10 @@ export async function bootstrap(): Promise<void> {
       const character = await state.app.enter(id);
       state.pendingEvent = null;
       eventPanel.classList.add('hidden');
-      log(`进入「${character.name}」，当前境界 ${character.realm}。`, 'muted');
+      log(
+        `进入「${character.name}」，当前境界 ${stageLabel(character.realm, character.stage)}。`,
+        'muted',
+      );
       renderGame(character);
       showScreen('game');
     } catch (error) {
@@ -289,11 +400,14 @@ export async function bootstrap(): Promise<void> {
 
   async function doBreakthrough(): Promise<void> {
     if (state.character === null) return;
-    const before = state.character.realm;
+    const before = stageLabel(state.character.realm, state.character.stage);
     try {
       const turn = await state.app.breakthrough();
       if (turn.result.success) {
-        log(`突破成功：${before} → ${turn.character.realm}，修为 ${fmt(turn.character.cultivation)}`, 'good');
+        log(
+          `突破成功：${before} → ${stageLabel(turn.character.realm, turn.character.stage)}，修为 ${fmt(turn.character.cultivation)}`,
+          'good',
+        );
       } else if (turn.result.lost > 0) {
         log(`突破失败：损失修为 ${fmt(turn.result.lost)}，可立即重试`, 'bad');
       } else {
@@ -311,7 +425,10 @@ export async function bootstrap(): Promise<void> {
       const turn = await state.app.drawEvent();
       afterUpdate(turn.character);
       if (turn.event === null) {
-        log(`本境界（${turn.character.realm}）已历练完。`, 'muted');
+        log(
+          `本境界（${stageLabel(turn.character.realm, turn.character.stage)}）已历练完。`,
+          'muted',
+        );
         hideEvent();
         return;
       }

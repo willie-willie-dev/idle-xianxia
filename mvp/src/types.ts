@@ -16,6 +16,17 @@ export type WuXing = '金' | '木' | '水' | '火' | '土';
 /** MVP 三阶境界。 */
 export type Realm = '炼气' | '筑基' | '金丹';
 
+/** 境界内的阶位细分：每个境界再分前 / 中 / 后期，共 9 阶。 */
+export type RealmStage = '前期' | '中期' | '后期';
+
+/** 功法库 id（`balance.ts` 的 `TECHNIQUE_LIBRARY`）。 */
+export type TechniqueId =
+  | 'qingmu'
+  | 'liehuo'
+  | 'houtu'
+  | 'gengjin'
+  | 'xuanshui';
+
 /** 灵根通道名，与 `Roots` 的键一致。 */
 export type SpiritRootKey = keyof Roots;
 
@@ -25,6 +36,9 @@ export interface Technique {
   absorbRate: number;
   convertRate: number;
 }
+
+/** 功法槽位下标：固定 3 槽。 */
+export type TechniqueSlot = 0 | 1 | 2;
 
 /** 事件的一个选项：给修为，或给剧情标记，至少给一样。 */
 export interface EventOption {
@@ -60,10 +74,15 @@ export interface MvpCharacter {
   spiritRoots: Roots;
   element: WuXing;
   realm: Realm;
+  /** 境界内阶位（前期 / 中期 / 后期）。 */
+  stage: RealmStage;
   cultivation: number;
   cultivationMax: number;
   nextThreshold: number;
-  technique: Technique;
+  /** 功法三槽，长度恒为 3；吸收只用 `activeSlot` 那一槽。 */
+  techniques: Technique[];
+  /** 当前生效槽位：0 / 1 / 2。 */
+  activeSlot: TechniqueSlot;
   eventState: EventState;
   /** 剧情标记（R3 的第二类回报），去重累积，写入存档。 */
   plotFlags: string[];
@@ -80,6 +99,7 @@ export interface CharacterSummary {
   id: string;
   name: string;
   realm: Realm;
+  stage: RealmStage;
   cultivation: number;
   day: number;
   createdAt: number;
@@ -90,7 +110,8 @@ export interface CreateCharacterInput {
   name: string;
   spiritRoots?: Roots;
   element?: WuXing;
-  technique?: Technique;
+  /** 三槽功法；缺省取 `balance.DEFAULT_TECHNIQUES`。 */
+  techniques?: Technique[];
 }
 
 /** 突破结果（纯函数返回值）。 */
@@ -98,11 +119,13 @@ export interface BreakthroughInput {
   cultivation: number;
   nextThreshold: number;
   realm: Realm;
+  stage: RealmStage;
 }
 
 export interface BreakthroughResult {
   success: boolean;
   realm: Realm;
+  stage: RealmStage;
   cultivation: number;
   cultivationMax: number;
   nextThreshold: number;

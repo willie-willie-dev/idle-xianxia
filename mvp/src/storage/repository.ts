@@ -15,10 +15,17 @@ import {
   INITIAL_CULTIVATION_MAX,
   INITIAL_DAY,
   INITIAL_REALM,
+  INITIAL_STAGE,
   INITIAL_NEXT_THRESHOLD,
+  REALMS,
+  REALM_STAGES,
   ROOTS_SUM_TARGET,
   ROOTS_SUM_TOLERANCE,
-  START_TECHNIQUE,
+  TECHNIQUE_SLOT_COUNT,
+  cultivationMaxOf,
+  defaultTechniques,
+  nextThresholdOf,
+  toTechnique,
 } from '../data/balance.ts';
 import type {
   CharacterSummary,
@@ -26,6 +33,7 @@ import type {
   MvpCharacter,
   Roots,
   Technique,
+  TechniqueSlot,
   TimeState,
   WuXing,
 } from '../types.ts';
@@ -104,13 +112,7 @@ export function buildCharacter(
       : { ...input.spiritRoots };
   assertRootsValid(spiritRoots);
 
-  const technique: Technique =
-    input.technique === undefined
-      ? { ...START_TECHNIQUE }
-      : { ...input.technique };
-  if (technique.name === undefined || technique.name.length === 0) {
-    throw new Error('功法必须有名字');
-  }
+  const techniques = resolveTechniques(input.techniques);
 
   const element = input.element ?? dominantElement(spiritRoots);
 
@@ -120,10 +122,12 @@ export function buildCharacter(
     spiritRoots,
     element,
     realm: INITIAL_REALM,
+    stage: INITIAL_STAGE,
     cultivation: INITIAL_CULTIVATION,
     cultivationMax: INITIAL_CULTIVATION_MAX,
     nextThreshold: INITIAL_NEXT_THRESHOLD,
-    technique,
+    techniques,
+    activeSlot: 0,
     eventState: { doneIds: [], count: 0 },
     plotFlags: [],
     time: { day: INITIAL_DAY, tick: 0 },
@@ -134,6 +138,43 @@ export function buildCharacter(
   };
 }
 
+/** 建号用的三槽功法：校验入参、截断 / 补齐到 3 槽。 */
+function resolveTechniques(input: Technique[] | undefined): Technique[] {
+  if (input === undefined) return defaultTechniques();
+  if (!Array.isArray(input)) throw new Error('功法槽位必须是数组');
+  const slots: Technique[] = [];
+  for (const item of input.slice(0, TECHNIQUE_SLOT_COUNT)) {
+    if (!isUsableTechnique(item)) throw new Error('功法必须有名字与非负系数');
+    slots.push(toTechnique(item));
+  }
+  const defaults = defaultTechniques();
+  while (slots.length < TECHNIQUE_SLOT_COUNT) {
+    slots.push(defaults[slots.length]);
+  }
+  return slots;
+}
+
+/** 是否为可用的功法对象（名字非空、两个系数为有限非负数）。 */
+function isUsableTechnique(value: unknown): value is Technique {
+  if (value === null || typeof value !== 'object') return false;
+  const raw = value as Partial<Technique>;
+  return (
+    typeof raw.name === 'string' &&
+    raw.name.trim().length > 0 &&
+    typeof raw.absorbRate === 'number' &&
+    Number.isFinite(raw.absorbRate) &&
+    raw.absorbRate >= 0 &&
+    typeof raw.convertRate === 'number' &&
+    Number.isFinite(raw.convertRate) &&
+    raw.convertRate >= 0
+  );
+}
+
+/** 宽容版：迁移老存档时把坏数据丢掉，不抛错。 */
+function normalizeTechnique(value: unknown): Technique | null {
+  return isUsableTechnique(value) ? toTechnique(value) : null;
+}
+
 /** 老存档补齐后加的字段（无迁移脚本时的兜底）。 */
 export function withDefaults(character: MvpCharacter): MvpCharacter {
   if (!Array.isArray(character.plotFlags)) character.plotFlags = [];
@@ -141,7 +182,58 @@ export function withDefaults(character: MvpCharacter): MvpCharacter {
     character.eventState = { doneIds: [], count: character.eventState?.count ?? 0 };
   }
   migrateTime(character);
+  migrateTechniques(character);
+  migrateStage(character);
   return character;
+}
+
+/**
+ * 功法迁移：单 `technique` → 三槽 `techniques` + `activeSlot`。
+ *
+ * - 已有 `techniques`：规范化、截断 / 补齐到 3 槽；
+ * - 只有旧 `technique`：`[旧功法, 烈火诀, 厚土诀]`（旧功法可能不在库里，原样放槽 0）；
+ * - 两者都没有：默认 `[青木诀, 烈火诀, 厚土诀]`；
+ * - `activeSlot` 缺失或非法 → 0；最后删掉旧 `technique` 字段。
+ */
+function migrateTechniques(character: MvpCharacter): void {
+  const legacy = character as MvpCharacter & { technique?: unknown };
+  const current: unknown[] = Array.isArray(character.techniques)
+    ? character.techniques
+    : [];
+  const slots: Technique[] = [];
+  for (const item of current) {
+    const normalized = normalizeTechnique(item);
+    if (normalized !== null) slots.push(normalized);
+    if (slots.length === TECHNIQUE_SLOT_COUNT) break;
+  }
+  if (slots.length === 0) {
+    const old = normalizeTechnique(legacy.technique);
+    if (old !== null) slots.push(old);
+  }
+  const defaults = defaultTechniques();
+  while (slots.length < TECHNIQUE_SLOT_COUNT) {
+    slots.push(defaults[slots.length]);
+  }
+  character.techniques = slots;
+
+  const active: unknown = character.activeSlot;
+  character.activeSlot = (active === 1 || active === 2 ? active : 0) as TechniqueSlot;
+  delete legacy.technique;
+}
+
+/**
+ * 阶位迁移：缺 `stage` 补「前期」；随后按 (realm, stage) 重算阈值与上限，
+ * 让老存档的旧三阶数值（100 / 500）不会继续冒充新阶位表。
+ */
+function migrateStage(character: MvpCharacter): void {
+  const realm = REALMS.includes(character.realm) ? character.realm : INITIAL_REALM;
+  const stage = REALM_STAGES.includes(character.stage)
+    ? character.stage
+    : INITIAL_STAGE;
+  character.realm = realm;
+  character.stage = stage;
+  character.nextThreshold = nextThresholdOf(realm, stage);
+  character.cultivationMax = cultivationMaxOf(realm, stage);
 }
 
 /**
@@ -178,6 +270,7 @@ function summarize(character: MvpCharacter): CharacterSummary {
     id: character.id,
     name: character.name,
     realm: character.realm,
+    stage: character.stage,
     cultivation: character.cultivation,
     day: character.time.day,
     createdAt: character.createdAt,
