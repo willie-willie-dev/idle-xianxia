@@ -214,3 +214,30 @@ test('createEventSystem：可注入自定义池', () => {
     null,
   );
 });
+
+test('按境界分组：EVENTS 共 24 条，炼气/筑基/金丹各 8 条', () => {
+  assert.equal(EVENTS.length, 24);
+
+  const grouped = {
+    炼气: EVENTS.filter((event) => event.realm === '炼气'),
+    筑基: EVENTS.filter((event) => event.realm === '筑基'),
+    金丹: EVENTS.filter((event) => event.realm === '金丹'),
+  };
+
+  for (const realm of REALMS) {
+    const bucket = grouped[realm];
+    assert.equal(bucket.length, 8, `${realm} 应有 8 条`);
+    assert.ok(bucket.every((event) => event.realm === realm));
+  }
+});
+
+test('pickEvent：连续抽取不重复，结果 id 不在 doneIds 中', () => {
+  for (let i = 0; i < 100; i += 1) {
+    const realm = REALMS[i % REALMS.length];
+    const ids = EVENTS.filter((event) => event.realm === realm).map((event) => event.id);
+    const doneIds = ids.slice(0, i % (ids.length + 1));
+    const picked = pickEvent({ realm, doneIds, seed: i + 1 });
+    if (picked.event === null) continue;
+    assert.equal(doneIds.includes(picked.event.id), false);
+  }
+});
