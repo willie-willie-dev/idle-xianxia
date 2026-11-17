@@ -102,3 +102,19 @@ mvp/
 **验算（火山 + 默认灵根，原始入池 88.55）**：青木诀 10.626 / 烈火诀 13.2825 /
 厚土诀 15.49625 / 庚金诀 17.71 / 玄水诀 19.92375 修为每次 —— 换功法后单次吸收
 变化 ≈ 1.87 倍（0.12 → 0.225），浏览器里一眼能看出。
+
+## 八、实现期补充（2026-11-17 下午）：事件模块 / 物品 / 无功法门禁
+
+> 本轮把事件抽成独立模块、加最小物品系统，并把功法改成「历练获得 → 背包 →
+> 装备到槽位」；对账时与 01-01（功法）/ 02-01（事件）核对。
+
+| 项 | 决定 | 说明 |
+|---|---|---|
+| **事件模块** | 新建 `src/event/`：`types` / `pool`（索引）/ `picker`（LCG 抽取）/ `resolver`（选项结算）/ `index`（`createEventSystem`：`next` / `resolve` / `list` / `byId`） | 事件数据仍留在 `data/events.ts`；`systems/event.ts` 降为兼容 re-export，旧 import 不动 |
+| **物品/背包** | `InventoryItem { uid, kind: 'technique', techniqueId, fromEventId, obtainedAt }`，`MvpCharacter.inventory: InventoryItem[]`，初始 `[]` | 同一 `techniqueId` 只保留一条（`addItem` 去重），`uid` 只是实例 id |
+| **功法槽** | `techniques: (string \| null)[]`（恒 3，元素是功法 id，空槽 null），`activeSlot: 0 \| 1 \| 2`；删除「槽里存 Technique 对象」写法 | 初始 `START_SLOTS = [null, null, null]`、`START_INVENTORY = []`；`START_TECHNIQUE` 只作为纯函数测试的数值样本保留 |
+| **无功法门禁** | 当前生效槽为空 → `absorb()` 返回 `{ gain: 0, blocked: true }`，修为 +0、**不推进时间 / 种子** | 吸收按钮仍可点；UI 日志「没有功法，灵气散于经脉」；历练不受影响 |
+| **功法掉落** | 选项级 `option.grants`，进背包但不自动装备；`lianqi-01` 选项 0 保底 `qingmu`，其余四本各 1 条（见 DESIGN 掉落表） | 同一条事件靠 `doneIds` 不重复抽；已拥有时 `addItem` 忽略并在 `EventTurn.duplicates` 回报 |
+| **app 新 API** | `equipTechnique(slot, itemUid)`、`ownedTechniques()`、`inventory()`；`setSlotTechnique(slot, id)` 保留但要求已拥有 | 装备不改 `activeSlot`；UI 下拉只列背包功法，槽位按钮切换生效位 |
+| **老存档迁移** | 对象数组 / 单 `technique` 按 id 或名字匹配 `TECHNIQUE_LIBRARY` → id 数组；匹配不到置 null；匹配到的补进 `inventory`（`fromEventId: 'migrated'`） | 缺 `inventory` → `[]`，缺 / 非法 `activeSlot` → 0；`migrateStage` / `migrateTime` 不变 |
+| **测试** | 61 条旧测试全部保留并更新；新增 `inventory` / `event-system` / `absorb-gate` 三个文件，共 85 条 | `node --test tests/*.test.ts` 85 通过；`npx vite build` 通过 |

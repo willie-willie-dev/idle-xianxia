@@ -32,6 +32,22 @@ type RealmStage = '前期' | '中期' | '后期';        // 9 阶 = 3 境界 × 
 type TechniqueId = 'qingmu' | 'liehuo' | 'houtu' | 'gengjin' | 'xuanshui';
 type SpiritRootKey = 'fire' | 'water' | 'wood' | 'metal' | 'earth' | 'qian' | 'kun';
 type Roots = Record<SpiritRootKey, number>;          // 复用 mvp/absorb.ts，合计 100
+type ItemKind = 'technique';                         // MVP 只有功法一类物品
+
+interface InventoryItem {
+  uid: string;                    // 唯一，crypto.randomUUID()
+  kind: ItemKind;
+  techniqueId: string;            // 指向 TECHNIQUE_LIBRARY
+  fromEventId: string;            // 来源事件；迁移补的为 'migrated'
+  obtainedAt: number;
+}
+
+interface EventOption {
+  text: string;
+  cultivationGain?: number;
+  plotFlag?: string;
+  grants?: string[];              // 选项级功法掉落（1 本为限，应用层去重）
+}
 
 interface TimeState {            // v0.2：天为最小单位，不引入时辰/phase
   day: number;                   // 第几天，从 1 开始
@@ -48,8 +64,9 @@ interface MvpCharacter {
   cultivation: number;
   cultivationMax: number;
   nextThreshold: number;         // 进入下一阶所需修为；顶阶 = 自身阈值
-  techniques: Technique[];       // 功法三槽，长度恒为 3（不再有单 technique 字段）
+  techniques: (string | null)[]; // 功法三槽，长度恒为 3，元素是功法 id，空槽为 null
   activeSlot: 0 | 1 | 2;         // 当前生效槽位，吸收只用 techniques[activeSlot]
+  inventory: InventoryItem[];    // 背包：功法只能从历练事件获得
   eventState: { doneIds: string[]; count: number };
   plotFlags: string[];           // R3 剧情标记，去重累积（2026-11-16 实现期补充）
   time: TimeState;
@@ -154,15 +171,29 @@ applyOption(character, event, optionIndex): { cultivation, plotFlags, nextSeed }
 | `gengjin` | 庚金诀 | 0.50 | 0.40 | 0.200 |
 | `xuanshui` | 玄水诀 | 0.25 | 0.90 | 0.225 |
 
-- 默认三槽：`[青木诀, 烈火诀, 厚土诀]`，`activeSlot = 0`（`START_TECHNIQUE` = 青木诀）。
-- `app.setActiveSlot(index)` 切换生效槽位；`app.setSlotTechnique(slot, id)` 从库里换功法（未知 id / 槽位越界抛错）。
-- 老存档迁移：缺 `stage` → 前期；缺 `techniques` → 由旧 `technique` 生成 `[旧功法, 烈火诀, 厚土诀]`；两者都缺 → 默认三槽；随后删除旧 `technique` 字段。
+- **初始没有功法**：三槽 `[null, null, null]`（`START_SLOTS`），背包 `[]`（`START_INVENTORY`），`activeSlot = 0`。
+- 功法只能由历练事件的 `option.grants` 掉落，进背包后由玩家装备；**当前生效槽为空时吸收 +0、不推进时间**。
+- `app.equipTechnique(slot, itemUid)` 按背包实例装备；`app.setSlotTechnique(slot, id)` 按功法 id 装备（必须已拥有）；两者都不改 `activeSlot`，由 `app.setActiveSlot(index)` 切换生效槽。
+- `app.ownedTechniques()` / `app.inventory()` 给 UI 用；槽位下拉只列背包里已拥有的功法。
+- 老存档迁移：对象数组 / 单 `technique` 按 id 或名字匹配功法库 → id 数组，匹配不到的槽置 `null`；匹配到的补进背包（`fromEventId: 'migrated'`）；缺 `inventory` → `[]`，缺 / 非法 `activeSlot` → 0；缺 `stage` → 前期。随后删除旧 `technique` 字段。
+
+**功法掉落表（选项级，各 1 本）**：
+
+| 事件 | 选项 | 功法 |
+|---|---|---|
+| `lianqi-01 山道拾遗` | 0 就地以神识探入 | `qingmu` 青木诀（新手保底） |
+| `zhuji-01 洞府灵脉` | 0 布一座聚灵阵，就此闭关 | `liehuo` 烈火诀 |
+| `zhuji-06 渡口论道三日` | 0 倾囊相辩，不肯让人 | `houtu` 厚土诀 |
+| `jindan-01 金丹初转` | 0 以识海温养，一坐三日 | `gengjin` 庚金诀 |
+| `jindan-07 心境失守` | 0 以剑斩念，一间不留 | `xuanshui` 玄水诀 |
 
 ## 6. 一个循环的时序
 
 ```
 用户点「吸收」
  → app: repo.get(activeId)
+ → 门禁: activeTechnique(techniques, activeSlot) === null
+      → 修为 +0、日志「没有功法，灵气散于经脉」、不推进时间 / 种子（直接返回）
  → domain: absorb(location, roots, techniques[activeSlot]) → cultivate()
  → character.cultivation = min(cultivation + gain, cultivationMax)
  → time: TimeService.advance(character.time, ACTION_DAYS.absorb, 'absorb') ; rngSeed 推进
@@ -176,9 +207,12 @@ applyOption(character, event, optionIndex): { cultivation, plotFlags, nextSeed }
  → repo.update() → 渲染
 
 用户点「历练」
- → domain: pickEvent() → 用户选择 → applyOption()
+ → domain: eventSystem.next() → 用户选择 → eventSystem.resolve()
+ → 选项回报：修为 + 剧情标记 + grants（功法 id）
+ → grants 经 addItem 进背包（同 techniqueId 去重，重复只回报「已拥有」）
  → time: advance(event.days ?? ACTION_DAYS.event, 'event')（耗时事件 2~7 天）
- → 修为/剧情标记写入 → repo.update()
+ → 修为/剧情标记/背包写入 → repo.update()
+（玩家从背包「装备到①/②/③」，或用槽位下拉换功法）
 ```
 
 ## 7. 文件树
@@ -191,13 +225,19 @@ mvp/
 ├── index.html
 ├── src/
 │   ├── types.ts               MvpCharacter 等全部类型
-│   ├── data/balance.ts        数值常量
+│   ├── data/balance.ts        数值常量 + 起始槽位 / 背包 / 功法库
 │   ├── data/locations.ts
-│   ├── data/events.ts         24 条事件
+│   ├── data/events.ts         24 条事件 + 5 条选项级功法掉落
+│   ├── event/types.ts         事件类型（GameEvent / PickResult / ResolveResult …）
+│   ├── event/pool.ts          事件索引（按 id / 境界）
+│   ├── event/picker.ts        纯函数抽取（LCG 种子）
+│   ├── event/resolver.ts      纯函数结算（修为 / 标记 / grants）
+│   ├── event/index.ts         事件系统服务（next / resolve / list / byId）
 │   ├── systems/absorb.ts      已有（PR #4）
 │   ├── systems/cultivate.ts
 │   ├── systems/breakthrough.ts
-│   ├── systems/event.ts
+│   ├── systems/inventory.ts   背包与功法槽纯函数（add / equip / active）
+│   ├── systems/event.ts       兼容转发层（re-export event/）
 │   ├── time/types.ts           TimeState / TimeReason / TimeHook
 │   ├── time/time-service.ts    TimeService（逐天推进、钩子排序与隔离）
 │   ├── storage/repository.ts  接口 + 内存实现
@@ -209,7 +249,10 @@ mvp/
     ├── cultivate.test.ts
     ├── breakthrough.test.ts   成功/失败/阈值递推
     ├── stage.test.ts          9 阶阈值表、逐阶推进、顶阶、失败扣 20%
-    ├── technique.test.ts      三槽默认值、换功法产出、迁移
+    ├── technique.test.ts      初始空槽、背包种子、换功法产出、迁移
+    ├── inventory.test.ts      加物品去重、装备校验、空槽、对象数组迁移
+    ├── event-system.test.ts   池索引、境界过滤、doneIds、种子、掉落 / 重复
+    ├── absorb-gate.test.ts    无功法 +0 不耗天、装备后产出、槽位切换
     ├── time.test.ts           0/1/多天推进、钩子顺序与隔离、非法天数
     └── event.test.ts          抽事件、禁空结算、种子可复现
 ```
@@ -223,11 +266,12 @@ mvp/
 
 ## 9. 验收（人肉，最后一关）
 
-1. 新建角色 → 出现在列表 → 进入游戏
-2. 连点吸收 8–12 次 → 修为到 100 → 突破成功 → 阶位变「炼气·中期」
-3. 刷新浏览器 → 角色与进度还在
-4. 删除角色 → 列表消失、`activeId` 清空
-5. 断网（或直接 file:// 打开）不报错
+1. 新建角色 → 出现在列表 → 进入游戏（三槽「空」、背包空、提示「尚未习得功法，先去历练」）
+2. 无功法点吸收 → 修为 +0、天数不动；点历练，直到 `lianqi-01` 掉青木诀
+3. 背包装备青木诀到① → 连点吸收 8–12 次 → 修为到 100 → 突破成功 → 阶位变「炼气·中期」
+4. 刷新浏览器 → 角色与进度还在
+5. 删除角色 → 列表消失、`activeId` 清空
+6. 断网（或直接 file:// 打开）不报错
 
 ## 10. 风险
 

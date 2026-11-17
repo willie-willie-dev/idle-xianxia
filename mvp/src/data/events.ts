@@ -1,8 +1,12 @@
 /**
  * 《登仙·MVP》事件池：24 条，每境界 8 条。
  *
- * 遵循 R2（事件不消耗资源）与 R3（只给修为 + 剧情标记，不给装备）：
+ * 遵循 R2（事件不消耗资源）；R3 只给修为 + 剧情标记：
  * 每个选项至少给 `cultivationGain` 或 `plotFlag` 之一，禁止空结算。
+ *
+ * 功法是事件掉落（`option.grants`，选项级奖励）：新手第一本由
+ * `lianqi-01` 保底给 `qingmu`，其余四本分布到筑基 / 金丹事件，各 1 本。
+ * 掉落进背包，需要玩家自己装备到功法槽后才生效。
  *
  * 文案 v0.2：炼气写凡俗与初入门径，筑基写宗门、坊市、灵田、同道，
  * 金丹写秘境、天象、心魔、大能。选项一律一保守一激进，`plotFlag`
@@ -19,9 +23,9 @@ export const EVENTS: readonly GameEvent[] = [
     title: '山道拾遗',
     text: '山道拐弯处，你踢到一枚玉简，边角被雨水浸得发亮。玉简贴掌时微微发烫，似在等你探入神识。',
     options: [
-      { text: '就地以神识探入', cultivationGain: 8 },
-      { text: '收入袖中，回洞府再看', cultivationGain: 5, plotFlag: '藏玉简' },
-      { text: '放回原处，只当未见', cultivationGain: 6, plotFlag: '不取遗物' },
+      { text: '就地以神识探入', cultivationGain: 8, grants: ['qingmu'] },
+      { text: '收入袖中，回洞府再看', cultivationGain: 5, plotFlag: '藏玉简', grants: ['qingmu'] },
+      { text: '放回原处，只当未见', cultivationGain: 6, plotFlag: '不取遗物', grants: ['qingmu'] },
     ],
   },
   {
@@ -109,7 +113,7 @@ export const EVENTS: readonly GameEvent[] = [
     text: '新开的洞府里，灵脉在石壁下低鸣，像有活物在土里翻身。',
     days: 5,
     options: [
-      { text: '布一座聚灵阵，就此闭关', cultivationGain: 15 },
+      { text: '布一座聚灵阵，就此闭关', cultivationGain: 15, grants: ['liehuo'] },
       { text: '封了洞府，继续云游', cultivationGain: 8, plotFlag: '云游' },
       { text: '请宗门长辈先来看一眼', cultivationGain: 6, plotFlag: '报宗门' },
     ],
@@ -162,7 +166,7 @@ export const EVENTS: readonly GameEvent[] = [
     text: '一位云游道人坐在渡口石上，说愿与你论道三日，输了的人请酒。',
     days: 3,
     options: [
-      { text: '倾囊相辩，不肯让人', cultivationGain: 15, plotFlag: '论道胜' },
+      { text: '倾囊相辩，不肯让人', cultivationGain: 15, plotFlag: '论道胜', grants: ['houtu'] },
       { text: '只听不语，任他讲完', cultivationGain: 9, plotFlag: '听道' },
       { text: '借故离席，回去炼丹', cultivationGain: 7 },
     ],
@@ -198,7 +202,7 @@ export const EVENTS: readonly GameEvent[] = [
     text: '丹田里那颗金丹缓缓转了一圈，整座洞府的灵气都跟着晃了晃。',
     days: 3,
     options: [
-      { text: '以识海温养，一坐三日', cultivationGain: 15 },
+      { text: '以识海温养，一坐三日', cultivationGain: 15, grants: ['gengjin'] },
       { text: '以剑意淬炼，逼它再快一分', cultivationGain: 10, plotFlag: '剑淬金丹' },
       { text: '出关走走，看看境界变了什么', cultivationGain: 8, plotFlag: '观境' },
     ],
@@ -261,7 +265,7 @@ export const EVENTS: readonly GameEvent[] = [
     text: '闭关第七日，妄念一间间推开你识海里的门，每一间里都坐着一个你。',
     days: 7,
     options: [
-      { text: '以剑斩念，一间不留', cultivationGain: 13, plotFlag: '斩妄念' },
+      { text: '以剑斩念，一间不留', cultivationGain: 13, plotFlag: '斩妄念', grants: ['xuanshui'] },
       { text: '静观其变，看它要说什么', cultivationGain: 10 },
       { text: '出关，暂避锋芒', cultivationGain: 6, plotFlag: '避心魔' },
     ],

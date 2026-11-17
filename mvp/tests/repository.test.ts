@@ -4,7 +4,8 @@ import { test } from 'node:test';
 import {
   DEFAULT_ROOTS,
   INITIAL_CULTIVATION_MAX,
-  defaultTechniques,
+  START_INVENTORY,
+  START_SLOTS,
   nextThresholdOf,
 } from '../src/data/balance.ts';
 import { MemoryCharacterRepository, withDefaults } from '../src/storage/repository.ts';
@@ -110,8 +111,9 @@ test('create：缺省值全部来自 balance.ts', async () => {
 
   assert.equal(character.name, '沈青');
   assert.deepEqual(character.spiritRoots, DEFAULT_ROOTS);
-  assert.deepEqual(character.techniques, defaultTechniques());
+  assert.deepEqual(character.techniques, [...START_SLOTS]);
   assert.equal(character.techniques.length, 3);
+  assert.deepEqual(character.inventory, [...START_INVENTORY]);
   assert.equal(character.activeSlot, 0);
   assert.equal(character.realm, '炼气');
   assert.equal(character.stage, '前期');

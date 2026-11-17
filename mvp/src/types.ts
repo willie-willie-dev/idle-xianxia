@@ -7,8 +7,18 @@
 
 import type { Roots } from './systems/absorb.ts';
 import type { TimeState } from './time/types.ts';
+import type { ResolveResult } from './event/types.ts';
 
 export type { Roots, TimeState };
+export type {
+  EventOption,
+  EventPoolQuery,
+  GameEvent,
+  PickEventInput,
+  PickEventResult,
+  PickResult,
+  ResolveResult,
+} from './event/types.ts';
 
 /** 五行主属性。只做展示，暂不参与计算。 */
 export type WuXing = '金' | '木' | '水' | '火' | '土';
@@ -40,25 +50,23 @@ export interface Technique {
 /** 功法槽位下标：固定 3 槽。 */
 export type TechniqueSlot = 0 | 1 | 2;
 
-/** 事件的一个选项：给修为，或给剧情标记，至少给一样。 */
-export interface EventOption {
-  text: string;
-  cultivationGain?: number;
-  plotFlag?: string;
-}
+/** 物品大类；MVP 只有功法一类。 */
+export type ItemKind = 'technique';
 
-/** 一条事件。 */
-export interface GameEvent {
-  id: string;
-  realm: Realm;
-  title: string;
-  text: string;
-  /**
-   * 本次历练耗时天数（2~7）。
-   * 省略时取 `ACTION_DAYS.event`，即不耗天。
-   */
-  days?: number;
-  options: EventOption[];
+/**
+ * 背包里的一条物品。
+ *
+ * `uid` 是实例 id（同一种功法只保留一条，`techniqueId` 才是去重键）；
+ * `fromEventId` 记录来源，迁移来的老存档记为 `'migrated'`。
+ */
+export interface InventoryItem {
+  uid: string;
+  kind: ItemKind;
+  /** 指向 `TECHNIQUE_LIBRARY` 的 id。 */
+  techniqueId: string;
+  /** 来源事件 id；迁移补进来的用 `'migrated'`。 */
+  fromEventId: string;
+  obtainedAt: number;
 }
 
 /** 事件进度：已完成的 id 与累计次数。 */
@@ -79,10 +87,12 @@ export interface MvpCharacter {
   cultivation: number;
   cultivationMax: number;
   nextThreshold: number;
-  /** 功法三槽，长度恒为 3；吸收只用 `activeSlot` 那一槽。 */
-  techniques: Technique[];
-  /** 当前生效槽位：0 / 1 / 2。 */
+  /** 功法三槽，长度恒为 3；元素是功法 id，空槽为 null。 */
+  techniques: (string | null)[];
+  /** 当前生效槽位：0 / 1 / 2；吸收只用 `techniques[activeSlot]`。 */
   activeSlot: TechniqueSlot;
+  /** 背包：功法只能通过历练事件获得，装备到槽位后才生效。 */
+  inventory: InventoryItem[];
   eventState: EventState;
   /** 剧情标记（R3 的第二类回报），去重累积，写入存档。 */
   plotFlags: string[];
@@ -110,8 +120,8 @@ export interface CreateCharacterInput {
   name: string;
   spiritRoots?: Roots;
   element?: WuXing;
-  /** 三槽功法；缺省取 `balance.DEFAULT_TECHNIQUES`。 */
-  techniques?: Technique[];
+  /** 三槽功法 id；缺省取 `balance.START_SLOTS`（三个空槽）。 */
+  techniques?: (string | null)[];
 }
 
 /** 突破结果（纯函数返回值）。 */
@@ -135,22 +145,5 @@ export interface BreakthroughResult {
   nextSeed: number;
 }
 
-/** 抽事件入参 / 结果。 */
-export interface PickEventInput {
-  realm: Realm;
-  doneIds: string[];
-  seed: number;
-}
-
-export interface PickEventResult {
-  event: GameEvent | null;
-  nextSeed: number;
-}
-
-/** 事件结算回报，保证非空（修为 > 0 或剧情标记至少一个）。 */
-export interface OptionOutcome {
-  cultivation: number;
-  cultivationGain: number;
-  plotFlags: string[];
-  nextSeed: number;
-}
+/** 事件结算回报（旧名字，等同 `event/types.ts` 的 `ResolveResult`）。 */
+export type OptionOutcome = ResolveResult;

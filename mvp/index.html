@@ -352,6 +352,78 @@
         font-size: 13px;
       }
 
+      .technique-hint {
+        margin: 8px 0 0;
+        font-size: 13px;
+        color: var(--gold);
+        opacity: 0.85;
+      }
+
+      .inventory-block {
+        margin: 0 0 16px;
+      }
+
+      .inventory-list {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+
+      .inventory-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 8px 10px;
+        background: rgba(255, 255, 255, 0.02);
+      }
+
+      .inventory-info {
+        display: flex;
+        flex-direction: column;
+        min-width: 96px;
+        flex: 1 1 140px;
+      }
+
+      .inventory-name {
+        font-size: 14px;
+        letter-spacing: 1px;
+      }
+
+      .inventory-meta {
+        font-size: 12px;
+        color: var(--paper-dim);
+        font-variant-numeric: tabular-nums;
+      }
+
+      .inventory-actions {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+      }
+
+      .inventory-equip {
+        padding: 5px 10px;
+        font-size: 12px;
+        border-color: var(--line);
+        background: rgba(255, 255, 255, 0.03);
+        color: var(--paper-dim);
+      }
+
+      .inventory-equip.is-equipped {
+        border-color: rgba(216, 180, 106, 0.55);
+        background: rgba(216, 180, 106, 0.12);
+        color: var(--gold);
+      }
+
+      .inventory-empty {
+        margin: 0;
+        font-size: 13px;
+        color: var(--paper-dim);
+      }
+
       .roots-row {
         display: flex;
         flex-wrap: wrap;
@@ -533,9 +605,19 @@
 
           <div class="technique-block">
             <p class="technique-head">
-              功法（点击槽位切换生效，下拉更换功法）
+              功法（点击槽位切换生效；下拉只列背包里已拥有的功法）
             </p>
             <div id="technique-slots" class="technique-slots" aria-label="功法三槽位"></div>
+            <p id="char-technique-hint" class="technique-hint hidden">
+              尚未习得功法，先去历练
+            </p>
+          </div>
+
+          <div class="inventory-block">
+            <p class="technique-head">
+              背包（功法只能从历练中获得，装备到槽位后才生效）
+            </p>
+            <div id="inventory" class="inventory-list" aria-label="背包"></div>
           </div>
 
           <div class="char-progress">

@@ -8,11 +8,12 @@
 import { canBreakthrough, createBrowserApp } from '../app.ts';
 import type { GameApp } from '../app.ts';
 import {
-  TECHNIQUE_LIBRARY,
   TECHNIQUE_SLOT_COUNT,
+  findTechnique,
   nextStageOf,
   stageLabel,
 } from '../data/balance.ts';
+import type { TechniqueDef } from '../data/balance.ts';
 import type {
   CharacterSummary,
   GameEvent,
@@ -107,6 +108,8 @@ export async function bootstrap(): Promise<void> {
   const btnEvent = el<HTMLButtonElement>('btn-event');
   const charRoots = el<HTMLElement>('char-roots');
   const techniqueSlots = el<HTMLElement>('technique-slots');
+  const techniqueHint = el<HTMLElement>('char-technique-hint');
+  const inventoryBox = el<HTMLElement>('inventory');
   const charProgress = el<HTMLElement>('char-progress');
   const charProgressBar = el<HTMLElement>('char-progress-bar');
 
@@ -148,60 +151,151 @@ export async function bootstrap(): Promise<void> {
     }
   }
 
+  /** 背包里已拥有的功法定义（按背包顺序，过滤库外脏数据）。 */
+  function ownedDefs(character: MvpCharacter): TechniqueDef[] {
+    return character.inventory
+      .map((item) => findTechnique(item.techniqueId))
+      .filter((def): def is TechniqueDef => def !== null);
+  }
+
+  /** 槽位里那本功法的定义；空槽 / 库外 id 返回 null。 */
+  function slotDef(
+    character: MvpCharacter,
+    slot: TechniqueSlot,
+  ): TechniqueDef | null {
+    const id = character.techniques[slot];
+    return id === null || id === undefined ? null : findTechnique(id);
+  }
+
   /**
-   * 功法三槽：一行三个按钮（当前生效高亮）+ 每槽右侧一个功法库下拉。
-   * 点击按钮 = setActiveSlot；改下拉 = setSlotTechnique。
+   * 功法三槽：一行三个按钮（当前生效高亮）+ 每槽右侧一个下拉。
+   *
+   * 下拉只列背包里已拥有的功法；空槽显示「空」。
+   * 点击按钮 = 切换生效槽；改下拉 = 把该槽换成功法。
    */
   function renderTechniqueSlots(character: MvpCharacter): void {
     clear(techniqueSlots);
+    const owned = ownedDefs(character);
     for (let index = 0; index < TECHNIQUE_SLOT_COUNT; index += 1) {
       const slot = index as TechniqueSlot;
-      const current = character.techniques[slot];
+      const current = slotDef(character, slot);
       const active = character.activeSlot === slot;
+      const mark = SLOT_MARKS[index] ?? String(index);
 
       const row = make('div', active ? 'technique-slot is-active' : 'technique-slot');
 
       const button = make(
         'button',
         active ? 'slot-button is-active' : 'slot-button',
-        `${SLOT_MARKS[index] ?? String(index)}${current.name}`,
+        `${mark}${current === null ? '空' : current.name}`,
       );
       button.type = 'button';
       button.id = `slot-${index}`;
-      button.title = active
-        ? `当前生效：${current.name}`
-        : `点击让「${current.name}」生效`;
+      button.title =
+        current === null
+          ? `空槽（${mark}）：先去历练获得功法，再从背包装备`
+          : active
+            ? `当前生效：${current.name}`
+            : `点击让「${current.name}」生效`;
       button.addEventListener('click', () => {
         void chooseSlot(slot);
       });
 
       const select = make('select', 'slot-select');
       select.id = `slot-select-${index}`;
-      select.title = '更换该槽功法';
-      // 老存档的槽 0 可能是库外功法：先放一条只读选项，避免下拉乱指。
-      const known = TECHNIQUE_LIBRARY.some((def) => def.name === current.name);
-      if (!known) {
-        const legacy = make('option', undefined, `${current.name}（库外）`);
-        legacy.value = '';
-        legacy.selected = true;
-        select.append(legacy);
+      select.title = '从背包选择要装备到该槽的功法';
+      if (current === null) {
+        const placeholder = make('option', undefined, '空');
+        placeholder.value = '';
+        placeholder.selected = true;
+        placeholder.disabled = true;
+        select.append(placeholder);
       }
-      for (const def of TECHNIQUE_LIBRARY) {
+      for (const def of owned) {
         const option = make(
           'option',
           undefined,
           `${def.name}（${(def.absorbRate * def.convertRate).toFixed(3)}）`,
         );
         option.value = def.id;
-        if (def.name === current.name) option.selected = true;
+        if (current !== null && def.id === current.id) option.selected = true;
         select.append(option);
       }
       select.addEventListener('change', () => {
+        if (select.value === '') return;
         void chooseTechnique(slot, select.value);
       });
 
       row.append(button, select);
       techniqueSlots.append(row);
+    }
+
+    // 无功法提示：背包空 → 先去历练；只是当前槽空 → 去背包装备。
+    if (slotDef(character, character.activeSlot) === null) {
+      techniqueHint.textContent =
+        owned.length === 0
+          ? '尚未习得功法，先去历练'
+          : '当前生效槽位为空，从背包装备一本功法';
+      techniqueHint.classList.remove('hidden');
+    } else {
+      techniqueHint.classList.add('hidden');
+    }
+  }
+
+  /**
+   * 背包面板：一行一本功法（名称 + 效率 + 装备到 ①②③）。
+   * 功法只能从历练事件获得，这里不提供「凭空获得」的入口。
+   */
+  function renderInventory(character: MvpCharacter): void {
+    clear(inventoryBox);
+    const owned = ownedDefs(character);
+    if (owned.length === 0) {
+      inventoryBox.append(
+        make('p', 'inventory-empty', '背包空空。功法只能从历练事件中获得。'),
+      );
+      return;
+    }
+    for (const def of owned) {
+      const item = character.inventory.find(
+        (entry) => entry.techniqueId === def.id,
+      );
+      if (item === undefined) continue;
+
+      const row = make('div', 'inventory-row');
+      const info = make('div', 'inventory-info');
+      info.append(
+        make('span', 'inventory-name', def.name),
+        make(
+          'span',
+          'inventory-meta',
+          `效率 ${(def.absorbRate * def.convertRate).toFixed(3)}`,
+        ),
+      );
+
+      const actions = make('div', 'inventory-actions');
+      for (let index = 0; index < TECHNIQUE_SLOT_COUNT; index += 1) {
+        const slot = index as TechniqueSlot;
+        const equipped = character.techniques[slot] === def.id;
+        const mark = SLOT_MARKS[index] ?? String(index);
+        const button = make(
+          'button',
+          equipped ? 'inventory-equip is-equipped' : 'inventory-equip',
+          equipped ? `已装备${mark}` : `装备到${mark}`,
+        );
+        button.type = 'button';
+        button.id = `equip-${def.id}-${index}`;
+        button.disabled = equipped;
+        button.title = equipped
+          ? `「${def.name}」已在第 ${slot + 1} 槽`
+          : `把「${def.name}」装备到第 ${slot + 1} 槽`;
+        button.addEventListener('click', () => {
+          void equipItem(slot, item.uid);
+        });
+        actions.append(button);
+      }
+
+      row.append(info, actions);
+      inventoryBox.append(row);
     }
   }
 
@@ -241,6 +335,7 @@ export async function bootstrap(): Promise<void> {
     el<HTMLElement>('char-element').textContent = character.element;
     renderRoots(character);
     renderTechniqueSlots(character);
+    renderInventory(character);
     renderProgress(character);
 
     const top = nextStageOf(character.realm, character.stage) === null;
@@ -254,18 +349,25 @@ export async function bootstrap(): Promise<void> {
         : `还差 ${fmt(character.nextThreshold - character.cultivation)} 修为`;
   }
 
-  /** 点击槽位按钮：切换生效功法。 */
+  /** 点击槽位按钮：切换生效槽位（空槽也允许切，吸收会提示无功法）。 */
   async function chooseSlot(slot: TechniqueSlot): Promise<void> {
     try {
       const character = await state.app.setActiveSlot(slot);
-      log(`切换功法：「${character.techniques[slot].name}」生效。`, 'muted');
+      const def = slotDef(character, slot);
+      const mark = SLOT_MARKS[slot] ?? String(slot);
+      log(
+        def === null
+          ? `切换生效槽位：${mark}（空槽，先装备功法再吸收）。`
+          : `切换功法：「${def.name}」生效。`,
+        'muted',
+      );
       renderGame(character);
     } catch (error) {
       logError(error);
     }
   }
 
-  /** 改槽位下拉：把该槽换成功法库里的另一条。 */
+  /** 改槽位下拉：把该槽换成背包里的另一本功法。 */
   async function chooseTechnique(
     slot: TechniqueSlot,
     techniqueId: string,
@@ -273,7 +375,28 @@ export async function bootstrap(): Promise<void> {
     if (techniqueId === '') return;
     try {
       const character = await state.app.setSlotTechnique(slot, techniqueId);
-      log(`第 ${slot + 1} 槽换为「${character.techniques[slot].name}」。`, 'muted');
+      const def = slotDef(character, slot);
+      log(
+        `第 ${slot + 1} 槽换为「${def?.name ?? '未知功法'}」。`,
+        'muted',
+      );
+      renderGame(character);
+    } catch (error) {
+      logError(error);
+    }
+  }
+
+  /** 从背包装备到某个槽位（不自动切换生效槽）。 */
+  async function equipItem(slot: TechniqueSlot, itemUid: string): Promise<void> {
+    try {
+      const character = await state.app.equipTechnique(slot, itemUid);
+      const def = slotDef(character, slot);
+      const mark = SLOT_MARKS[slot] ?? String(slot);
+      const activeNote =
+        character.activeSlot === slot
+          ? '已生效。'
+          : `当前生效位是${SLOT_MARKS[character.activeSlot] ?? String(character.activeSlot)}，点槽位按钮切换。`;
+      log(`「${def?.name ?? '功法'}」装备到${mark}。${activeNote}`, 'muted');
       renderGame(character);
     } catch (error) {
       logError(error);
@@ -377,6 +500,18 @@ export async function bootstrap(): Promise<void> {
         `历练「${turn.event.title}」：修为 +${fmt(turn.outcome.cultivationGain)}${flags}`,
         'good',
       );
+      if (turn.granted.length > 0) {
+        const names = turn.granted
+          .map((item) => findTechnique(item.techniqueId)?.name ?? item.techniqueId)
+          .join('、');
+        log(`获得功法：「${names}」，已放入背包。`, 'good');
+      }
+      if (turn.duplicates.length > 0) {
+        const names = turn.duplicates
+          .map((id) => findTechnique(id)?.name ?? id)
+          .join('、');
+        log(`已拥有「${names}」，重复掉落已忽略。`, 'muted');
+      }
       hideEvent();
       afterUpdate(turn.character);
     } catch (error) {
@@ -388,6 +523,11 @@ export async function bootstrap(): Promise<void> {
     if (state.character === null) return;
     try {
       const turn = await state.app.absorb(locationSelect.value);
+      if (turn.blocked) {
+        log('没有功法，灵气散于经脉（修为 +0，未耗时间）。', 'bad');
+        afterUpdate(turn.character);
+        return;
+      }
       const tail = turn.capped ? '（已至修为上限）' : '';
       log(
         `吸收灵气：修为 +${fmt(turn.gain)}${tail}，第 ${turn.character.time.day} 天`,

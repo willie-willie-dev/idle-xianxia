@@ -21,18 +21,21 @@ import {
   REALM_STAGES,
   ROOTS_SUM_TARGET,
   ROOTS_SUM_TOLERANCE,
+  START_INVENTORY,
+  START_SLOTS,
+  TECHNIQUE_LIBRARY,
   TECHNIQUE_SLOT_COUNT,
   cultivationMaxOf,
-  defaultTechniques,
+  findTechnique,
   nextThresholdOf,
-  toTechnique,
 } from '../data/balance.ts';
 import type {
   CharacterSummary,
   CreateCharacterInput,
+  InventoryItem,
   MvpCharacter,
   Roots,
-  Technique,
+  TechniqueId,
   TechniqueSlot,
   TimeState,
   WuXing,
@@ -112,7 +115,7 @@ export function buildCharacter(
       : { ...input.spiritRoots };
   assertRootsValid(spiritRoots);
 
-  const techniques = resolveTechniques(input.techniques);
+  const techniques = resolveSlots(input.techniques);
 
   const element = input.element ?? dominantElement(spiritRoots);
 
@@ -128,6 +131,7 @@ export function buildCharacter(
     nextThreshold: INITIAL_NEXT_THRESHOLD,
     techniques,
     activeSlot: 0,
+    inventory: [...START_INVENTORY],
     eventState: { doneIds: [], count: 0 },
     plotFlags: [],
     time: { day: INITIAL_DAY, tick: 0 },
@@ -138,41 +142,91 @@ export function buildCharacter(
   };
 }
 
-/** 建号用的三槽功法：校验入参、截断 / 补齐到 3 槽。 */
-function resolveTechniques(input: Technique[] | undefined): Technique[] {
-  if (input === undefined) return defaultTechniques();
+/**
+ * 建号用的三槽功法 id：校验入参、截断 / 补齐到 3 槽。
+ *
+ * 缺省 `START_SLOTS`（全空）；非空 id 必须在功法库里，否则抛错。
+ */
+function resolveSlots(input: (string | null)[] | undefined): (string | null)[] {
+  if (input === undefined) return [...START_SLOTS];
   if (!Array.isArray(input)) throw new Error('功法槽位必须是数组');
-  const slots: Technique[] = [];
+  const slots: (string | null)[] = [];
   for (const item of input.slice(0, TECHNIQUE_SLOT_COUNT)) {
-    if (!isUsableTechnique(item)) throw new Error('功法必须有名字与非负系数');
-    slots.push(toTechnique(item));
+    if (item === null) {
+      slots.push(null);
+      continue;
+    }
+    if (typeof item !== 'string') {
+      throw new Error('功法槽位必须是功法 id 或 null');
+    }
+    if (findTechnique(item) === null) throw new Error(`未知功法：${item}`);
+    slots.push(item);
   }
-  const defaults = defaultTechniques();
-  while (slots.length < TECHNIQUE_SLOT_COUNT) {
-    slots.push(defaults[slots.length]);
-  }
+  while (slots.length < TECHNIQUE_SLOT_COUNT) slots.push(null);
   return slots;
 }
 
-/** 是否为可用的功法对象（名字非空、两个系数为有限非负数）。 */
-function isUsableTechnique(value: unknown): value is Technique {
-  if (value === null || typeof value !== 'object') return false;
-  const raw = value as Partial<Technique>;
-  return (
-    typeof raw.name === 'string' &&
-    raw.name.trim().length > 0 &&
-    typeof raw.absorbRate === 'number' &&
-    Number.isFinite(raw.absorbRate) &&
-    raw.absorbRate >= 0 &&
-    typeof raw.convertRate === 'number' &&
-    Number.isFinite(raw.convertRate) &&
-    raw.convertRate >= 0
-  );
+/**
+ * 把老存档里的一条功法（对象或字符串）匹配到功法库 id。
+ *
+ * 先按 id、再按名字；匹配不到返回 null（该槽置空，不猜）。
+ */
+function matchTechniqueId(value: unknown): TechniqueId | null {
+  if (typeof value === 'string') {
+    const byId = findTechnique(value);
+    if (byId !== null) return byId.id;
+    const byName = TECHNIQUE_LIBRARY.find((def) => def.name === value);
+    return byName?.id ?? null;
+  }
+  if (value !== null && typeof value === 'object') {
+    const raw = value as { id?: unknown; name?: unknown };
+    if (typeof raw.id === 'string') {
+      const hit = findTechnique(raw.id);
+      if (hit !== null) return hit.id;
+    }
+    if (typeof raw.name === 'string') {
+      const byName = TECHNIQUE_LIBRARY.find((def) => def.name === raw.name);
+      if (byName !== undefined) return byName.id;
+      const byId = findTechnique(raw.name);
+      if (byId !== null) return byId.id;
+    }
+  }
+  return null;
 }
 
-/** 宽容版：迁移老存档时把坏数据丢掉，不抛错。 */
-function normalizeTechnique(value: unknown): Technique | null {
-  return isUsableTechnique(value) ? toTechnique(value) : null;
+/** 规范化背包：丢掉坏条目、按 `techniqueId` 去重、补齐缺字段。 */
+function normalizeInventory(character: MvpCharacter): InventoryItem[] {
+  const raw: unknown = character.inventory;
+  if (!Array.isArray(raw)) return [];
+  const now = Number.isFinite(character.updatedAt) ? character.updatedAt : Date.now();
+  const items: InventoryItem[] = [];
+  const seen = new Set<string>();
+  for (const entry of raw) {
+    if (entry === null || typeof entry !== 'object') continue;
+    const item = entry as Partial<InventoryItem>;
+    const techniqueId =
+      typeof item.techniqueId === 'string' ? item.techniqueId : null;
+    if (techniqueId === null || findTechnique(techniqueId) === null) continue;
+    if (seen.has(techniqueId)) continue;
+    seen.add(techniqueId);
+    items.push({
+      uid:
+        typeof item.uid === 'string' && item.uid.length > 0
+          ? item.uid
+          : crypto.randomUUID(),
+      kind: 'technique',
+      techniqueId,
+      fromEventId:
+        typeof item.fromEventId === 'string' && item.fromEventId.length > 0
+          ? item.fromEventId
+          : 'migrated',
+      obtainedAt:
+        typeof item.obtainedAt === 'number' && Number.isFinite(item.obtainedAt)
+          ? item.obtainedAt
+          : now,
+    });
+  }
+  return items;
 }
 
 /** 老存档补齐后加的字段（无迁移脚本时的兜底）。 */
@@ -188,33 +242,43 @@ export function withDefaults(character: MvpCharacter): MvpCharacter {
 }
 
 /**
- * 功法迁移：单 `technique` → 三槽 `techniques` + `activeSlot`。
+ * 功法迁移：老存档的对象数组 → 功法 id 数组 + 背包。
  *
- * - 已有 `techniques`：规范化、截断 / 补齐到 3 槽；
- * - 只有旧 `technique`：`[旧功法, 烈火诀, 厚土诀]`（旧功法可能不在库里，原样放槽 0）；
- * - 两者都没有：默认 `[青木诀, 烈火诀, 厚土诀]`；
- * - `activeSlot` 缺失或非法 → 0；最后删掉旧 `technique` 字段。
+ * - 旧 `techniques: Technique[]` / 单 `technique`：按 id / 名字匹配功法库，
+ *   匹配不到就丢弃并把该槽置 `null`；
+ * - 匹配到的功法同时补进 `inventory`（`fromEventId: 'migrated'`，每种一条）；
+ * - 缺 `inventory` → `[]`；缺 / 非法 `activeSlot` → 0；最后删掉旧 `technique` 字段。
  */
 function migrateTechniques(character: MvpCharacter): void {
   const legacy = character as MvpCharacter & { technique?: unknown };
-  const current: unknown[] = Array.isArray(character.techniques)
-    ? character.techniques
-    : [];
-  const slots: Technique[] = [];
-  for (const item of current) {
-    const normalized = normalizeTechnique(item);
-    if (normalized !== null) slots.push(normalized);
-    if (slots.length === TECHNIQUE_SLOT_COUNT) break;
+  const current: unknown = character.techniques;
+  const slots: (string | null)[] = [];
+
+  if (Array.isArray(current) && current.length > 0) {
+    for (const item of current.slice(0, TECHNIQUE_SLOT_COUNT)) {
+      slots.push(matchTechniqueId(item));
+    }
+  } else if (legacy.technique !== undefined) {
+    slots.push(matchTechniqueId(legacy.technique));
   }
-  if (slots.length === 0) {
-    const old = normalizeTechnique(legacy.technique);
-    if (old !== null) slots.push(old);
+  while (slots.length < TECHNIQUE_SLOT_COUNT) slots.push(null);
+  const nextSlots = slots.slice(0, TECHNIQUE_SLOT_COUNT);
+  character.techniques = nextSlots;
+
+  const inventory = normalizeInventory(character);
+  const now = Number.isFinite(character.updatedAt) ? character.updatedAt : Date.now();
+  for (const id of nextSlots) {
+    if (id === null) continue;
+    if (inventory.some((item) => item.techniqueId === id)) continue;
+    inventory.push({
+      uid: crypto.randomUUID(),
+      kind: 'technique',
+      techniqueId: id,
+      fromEventId: 'migrated',
+      obtainedAt: now,
+    });
   }
-  const defaults = defaultTechniques();
-  while (slots.length < TECHNIQUE_SLOT_COUNT) {
-    slots.push(defaults[slots.length]);
-  }
-  character.techniques = slots;
+  character.inventory = inventory;
 
   const active: unknown = character.activeSlot;
   character.activeSlot = (active === 1 || active === 2 ? active : 0) as TechniqueSlot;

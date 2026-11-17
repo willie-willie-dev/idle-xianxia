@@ -1,19 +1,25 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { createMemoryApp } from '../src/app.ts';
+import { createApp } from '../src/app.ts';
+import type { GameApp } from '../src/app.ts';
 import {
   DEFAULT_ROOTS,
+  START_INVENTORY,
+  START_SLOTS,
   TECHNIQUE_LIBRARY,
   TECHNIQUE_SLOT_COUNT,
-  defaultTechniques,
   nextThresholdOf,
   techniqueById,
 } from '../src/data/balance.ts';
 import { VOLCANO } from '../src/data/locations.ts';
 import { MemoryCharacterRepository, withDefaults } from '../src/storage/repository.ts';
 import { absorb } from '../src/systems/absorb.ts';
-import type { MvpCharacter } from '../src/types.ts';
+import type {
+  InventoryItem,
+  MvpCharacter,
+  TechniqueSlot,
+} from '../src/types.ts';
 
 const EPS = 1e-9;
 
@@ -33,17 +39,46 @@ function gainOf(id: string): number {
   return absorb(VOLCANO, DEFAULT_ROOTS, def).cultivationGain;
 }
 
-test('三槽默认值：青木诀 / 烈火诀 / 厚土诀，activeSlot = 0', async () => {
+/** 造一条测试用背包物品。 */
+function makeItem(techniqueId: string): InventoryItem {
+  return {
+    uid: crypto.randomUUID(),
+    kind: 'technique',
+    techniqueId,
+    fromEventId: 'test',
+    obtainedAt: 1,
+  };
+}
+
+/** 先建号、再往背包里塞功法，最后交给 app（生产路径不提供凭空发功法）。 */
+async function seededApp(ids: readonly string[]): Promise<GameApp> {
+  const repo = new MemoryCharacterRepository();
+  const created = await repo.create({ name: '沈青' });
+  await repo.update(created.id, { inventory: ids.map(makeItem) });
+  const app = createApp(repo);
+  await app.enter(created.id);
+  return app;
+}
+
+/** 从背包按功法 id 找 uid，装备到指定槽。 */
+async function equipOwned(
+  app: GameApp,
+  slot: TechniqueSlot,
+  techniqueId: string,
+): Promise<MvpCharacter> {
+  const item = app.inventory().find((entry) => entry.techniqueId === techniqueId);
+  assert.ok(item !== undefined, `背包里应有 ${techniqueId}`);
+  return app.equipTechnique(slot, item.uid);
+}
+
+test('初始三槽全空：techniques = [null, null, null]，activeSlot = 0，背包为空', async () => {
   const repo = new MemoryCharacterRepository();
   const character = await repo.create({ name: '沈青' });
 
   assert.equal(TECHNIQUE_SLOT_COUNT, 3);
   assert.equal(character.techniques.length, 3);
-  assert.deepEqual(
-    character.techniques.map((technique) => technique.name),
-    ['青木诀', '烈火诀', '厚土诀'],
-  );
-  assert.deepEqual(character.techniques, defaultTechniques());
+  assert.deepEqual(character.techniques, [...START_SLOTS]);
+  assert.deepEqual(character.inventory, [...START_INVENTORY]);
   assert.equal(character.activeSlot, 0);
 
   // 功法库 5 条，综合效率严格递增（差异明显，便于测试）
@@ -76,81 +111,86 @@ test('吸收产出随功法变化：火山 + 默认灵根，效率 0.12 → 0.22
 });
 
 test('app：切换 activeSlot / 换槽功法后，单次吸收立即按新功法计算', async () => {
-  const app = createMemoryApp();
-  await app.create('沈青');
+  const app = await seededApp(['qingmu', 'liehuo', 'houtu', 'gengjin', 'xuanshui']);
 
-  // 默认槽 0 = 青木诀
+  // 槽 0 = 青木诀
+  await equipOwned(app, 0, 'qingmu');
   const first = await app.absorb();
   close(first.gain, 10.626, '槽 0 青木诀');
 
   // 切到槽 1 = 烈火诀
+  await equipOwned(app, 1, 'liehuo');
   await app.setActiveSlot(1);
   const second = await app.absorb();
   close(second.gain, 13.2825, '槽 1 烈火诀');
 
-  // 槽 2 换庚金诀，再切过去
-  const changed = await app.setSlotTechnique(2, 'gengjin');
-  assert.equal(changed.techniques[2].name, '庚金诀');
-  assert.equal(changed.activeSlot, 1); // 换功法不改生效槽
-  assert.deepEqual(
-    changed.techniques.map((technique) => technique.name),
-    ['青木诀', '烈火诀', '庚金诀'],
-  );
+  // 槽 2 装庚金诀，再切过去
+  const changed = await equipOwned(app, 2, 'gengjin');
+  assert.equal(changed.techniques[2], 'gengjin');
+  assert.equal(changed.activeSlot, 1); // 装备不改生效槽
+  assert.deepEqual(changed.techniques, ['qingmu', 'liehuo', 'gengjin']);
   await app.setActiveSlot(2);
   const third = await app.absorb();
   close(third.gain, 17.71, '槽 2 庚金诀');
 
   // 再换玄水诀，切到槽 2
-  await app.setSlotTechnique(2, 'xuanshui');
+  await equipOwned(app, 2, 'xuanshui');
   await app.setActiveSlot(2);
   const fourth = await app.absorb();
   close(fourth.gain, 19.92375, '槽 2 玄水诀');
 });
 
-test('setSlotTechnique / setActiveSlot：未知 id 与越界槽位抛错', async () => {
-  const app = createMemoryApp();
-  await app.create('沈青');
+test('setSlotTechnique / equipTechnique / setActiveSlot：未知 id、未拥有、越界都抛错', async () => {
+  const app = await seededApp(['qingmu']);
 
   await assert.rejects(() => app.setSlotTechnique(0, 'bogus'), /未知功法/);
+  await assert.rejects(() => app.setSlotTechnique(0, 'liehuo'), /不在背包/);
   await assert.rejects(() => app.setSlotTechnique(3, 'qingmu'), /功法槽位/);
   await assert.rejects(() => app.setSlotTechnique(-1, 'qingmu'), /功法槽位/);
+  await assert.rejects(() => app.equipTechnique(0, 'no-such-uid'), /没有这件物品/);
+  await assert.rejects(
+    () => app.equipTechnique(3, app.inventory()[0].uid),
+    /功法槽位/,
+  );
   await assert.rejects(() => app.setActiveSlot(3), /功法槽位/);
   await assert.rejects(() => app.setActiveSlot(1.5), /功法槽位/);
 
   // 抛错不影响存档
   const character = app.current();
   assert.notEqual(character, null);
-  assert.equal(character?.techniques[0].name, '青木诀');
+  assert.equal(character?.techniques[0], null);
   assert.equal(character?.activeSlot, 0);
 });
 
-test('迁移：旧单 technique → 三槽 [旧功法, 烈火诀, 厚土诀]，删除旧字段', async () => {
+test('迁移：旧单 technique（库外）丢弃为 null，不污染背包；库内则进槽并进背包', async () => {
   const repo = new MemoryCharacterRepository();
   const created = await repo.create({ name: '旧档' });
-  const legacy = { ...created } as unknown as Record<string, unknown>;
-  delete legacy.techniques;
-  delete legacy.activeSlot;
-  delete legacy.stage;
-  legacy.technique = { name: '玄天诀', absorbRate: 0.33, convertRate: 0.44 };
 
-  const migrated = withDefaults(legacy as unknown as MvpCharacter);
+  const unknown = { ...created } as unknown as Record<string, unknown>;
+  delete unknown.techniques;
+  delete unknown.activeSlot;
+  delete unknown.stage;
+  unknown.technique = { name: '玄天诀', absorbRate: 0.33, convertRate: 0.44 };
+  const migrated = withDefaults(unknown as unknown as MvpCharacter);
 
   assert.equal('technique' in migrated, false);
-  assert.deepEqual(
-    migrated.techniques.map((technique) => technique.name),
-    ['玄天诀', '烈火诀', '厚土诀'],
-  );
-  // 旧功法可以不在库外，原样放槽 0
-  assert.deepEqual(migrated.techniques[0], {
-    name: '玄天诀',
-    absorbRate: 0.33,
-    convertRate: 0.44,
-  });
+  assert.deepEqual(migrated.techniques, [null, null, null]);
+  assert.deepEqual(migrated.inventory, []);
   assert.equal(migrated.activeSlot, 0);
   assert.equal(migrated.stage, '前期');
+
+  // 库内功法：按名字匹配到 id，同时补进背包
+  const known = { ...created } as unknown as Record<string, unknown>;
+  delete known.techniques;
+  known.technique = { name: '青木诀', absorbRate: 0.4, convertRate: 0.3 };
+  const matched = withDefaults(known as unknown as MvpCharacter);
+  assert.deepEqual(matched.techniques, ['qingmu', null, null]);
+  assert.equal(matched.inventory.length, 1);
+  assert.equal(matched.inventory[0].techniqueId, 'qingmu');
+  assert.equal(matched.inventory[0].fromEventId, 'migrated');
 });
 
-test('迁移：既无 technique 也无 techniques → 默认三槽；缺 stage / activeSlot 也能补', async () => {
+test('迁移：既无 technique 也无 techniques → 三空槽；缺 stage / activeSlot 也能补', async () => {
   const repo = new MemoryCharacterRepository();
   const created = await repo.create({ name: '史前档' });
   const legacy = { ...created } as unknown as Record<string, unknown>;
@@ -161,7 +201,8 @@ test('迁移：既无 technique 也无 techniques → 默认三槽；缺 stage /
 
   const migrated = withDefaults(legacy as unknown as MvpCharacter);
 
-  assert.deepEqual(migrated.techniques, defaultTechniques());
+  assert.deepEqual(migrated.techniques, [null, null, null]);
+  assert.deepEqual(migrated.inventory, []);
   assert.equal(migrated.activeSlot, 0);
   assert.equal(migrated.stage, '前期');
   assert.equal(migrated.nextThreshold, nextThresholdOf('炼气', '前期'));
@@ -178,6 +219,7 @@ test('迁移：既无 technique 也无 techniques → 默认三槽；缺 stage /
   assert.equal(rebuilt.stage, '前期');
   assert.equal(rebuilt.nextThreshold, 700);
   assert.equal(rebuilt.cultivationMax, 2800);
-  // 已有三槽 → 保持，不被默认值覆盖
-  assert.deepEqual(rebuilt.techniques, defaultTechniques());
+  // 已有三槽（空槽）→ 保持，不被塞默认功法
+  assert.deepEqual(rebuilt.techniques, [null, null, null]);
+  assert.deepEqual(rebuilt.inventory, []);
 });

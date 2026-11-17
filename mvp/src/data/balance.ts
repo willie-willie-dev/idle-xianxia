@@ -6,6 +6,7 @@
  */
 
 import type {
+  InventoryItem,
   Realm,
   RealmStage,
   Roots,
@@ -90,12 +91,14 @@ export const TECHNIQUE_LIBRARY: readonly TechniqueDef[] = [
 /** 功法槽位数：固定 3 槽。 */
 export const TECHNIQUE_SLOT_COUNT = 3;
 
-/** 默认三槽：青木诀 / 烈火诀 / 厚土诀。 */
-export const DEFAULT_TECHNIQUE_IDS: readonly TechniqueId[] = [
-  'qingmu',
-  'liehuo',
-  'houtu',
-];
+/** 起始背包：没有任何功法，功法只能从历练事件里掉。 */
+export const START_INVENTORY: readonly InventoryItem[] = [];
+
+/** 起始三槽：全空（`null` 表示空槽）。 */
+export const START_SLOTS: readonly (TechniqueId | null)[] = [null, null, null];
+
+/** 新手保底功法：`lianqi-01 山道拾遗` 必掉，也是第一本功法的推荐值。 */
+export const BOOTSTRAP_TECHNIQUE_ID: TechniqueId = 'qingmu';
 
 /** 按 id 取功法；未知 id 返回 null。 */
 export function findTechnique(id: string): TechniqueDef | null {
@@ -109,7 +112,7 @@ export function techniqueById(id: string): TechniqueDef {
   return hit;
 }
 
-/** 只保留技法三字段的副本（存档里不存功法库 id）。 */
+/** 只保留技法三字段的副本（`Technique` 的窄化视图）。 */
 export function toTechnique(def: Technique): Technique {
   return {
     name: def.name,
@@ -118,12 +121,7 @@ export function toTechnique(def: Technique): Technique {
   };
 }
 
-/** 默认三槽功法（每次返回新副本，避免共享引用）。 */
-export function defaultTechniques(): Technique[] {
-  return DEFAULT_TECHNIQUE_IDS.map((id) => toTechnique(techniqueById(id)));
-}
-
-/** 起始功法「青木诀」（默认槽 0），与 PR #4 测试一致。 */
+/** 起始功法「青木诀」的数值副本（纯函数测试用，不是角色的初始装备）。 */
 export const START_TECHNIQUE: Technique = toTechnique(techniqueById('qingmu'));
 
 /** 校验槽位下标：必须是 0 / 1 / 2 的整数，否则抛错。 */
