@@ -31,7 +31,8 @@ function normalizeGrants(grants: readonly string[] | undefined): string[] {
  *
  * 保证非空：选项没写（或写了非正数）修为时兜底 `DEFAULT_EVENT_GAIN`，
  * 所以返回的 `cultivationGain` 恒 > 0；`plotFlags` 收集剧情标记，
- * `grants` 收集选项掉落的功法 id。
+ * `grants` 收集选项掉落的功法 id。`optionText` 与 `outcome`
+ * 原样带回选项原文和结果交代。
  *
  * 越界选项抛 `RangeError`。
  */
@@ -63,5 +64,7 @@ export function applyOption(
     plotFlags,
     grants: normalizeGrants(option.grants),
     nextSeed: nextSeed(state.rngSeed),
+    optionText: option.text,
+    outcome: option.outcome,
   };
 }

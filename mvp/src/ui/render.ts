@@ -6,7 +6,7 @@
  */
 
 import { canBreakthrough, createBrowserApp } from '../app.ts';
-import type { GameApp } from '../app.ts';
+import type { EventTurn, GameApp } from '../app.ts';
 import {
   TECHNIQUE_SLOT_COUNT,
   findTechnique,
@@ -102,6 +102,11 @@ export async function bootstrap(): Promise<void> {
   const eventTitle = el<HTMLElement>('event-title');
   const eventText = el<HTMLElement>('event-text');
   const eventOptions = el<HTMLElement>('event-options');
+  const eventResult = el<HTMLElement>('event-result');
+  const eventResultChoice = el<HTMLElement>('event-result-choice');
+  const eventResultText = el<HTMLElement>('event-result-text');
+  const eventResultDeltas = el<HTMLElement>('event-result-deltas');
+  const btnEventContinue = el<HTMLButtonElement>('btn-event-continue');
   const logBox = el<HTMLElement>('log');
   const btnAbsorb = el<HTMLButtonElement>('btn-absorb');
   const btnBreakthrough = el<HTMLButtonElement>('btn-breakthrough');
@@ -466,6 +471,9 @@ export async function bootstrap(): Promise<void> {
     eventTitle.textContent = `${event.title}（${event.realm}）`;
     eventText.textContent = event.text;
     clear(eventOptions);
+    eventOptions.classList.remove('hidden');
+    eventResult.classList.add('hidden');
+    clear(eventResultDeltas);
     event.options.forEach((option, index) => {
       const button = make('button', 'event-option', option.text);
       button.type = 'button';
@@ -480,6 +488,30 @@ export async function bootstrap(): Promise<void> {
   function hideEvent(): void {
     state.pendingEvent = null;
     eventPanel.classList.add('hidden');
+    eventResult.classList.add('hidden');
+    eventOptions.classList.remove('hidden');
+  }
+
+  /** 选完后的结果：选项收起，交代、徽标和「继续」留在面板里。 */
+  function showEventResult(turn: EventTurn): void {
+    eventResultChoice.textContent = `你的选择：${turn.outcome.optionText}`;
+    eventResultText.textContent = turn.outcome.outcome;
+    clear(eventResultDeltas);
+    if (turn.outcome.cultivationGain > 0) {
+      eventResultDeltas.append(
+        make('span', 'event-delta', `修为 +${fmt(turn.outcome.cultivationGain)}`),
+      );
+    }
+    for (const item of turn.granted) {
+      const name = findTechnique(item.techniqueId)?.name ?? item.techniqueId;
+      eventResultDeltas.append(make('span', 'event-delta', `获得功法「${name}」`));
+    }
+    for (const flag of turn.outcome.plotFlags) {
+      if (flag.trim().length === 0) continue;
+      eventResultDeltas.append(make('span', 'event-delta', `剧情标记「${flag}」`));
+    }
+    eventOptions.classList.add('hidden');
+    eventResult.classList.remove('hidden');
   }
 
   function afterUpdate(character: MvpCharacter): void {
@@ -512,7 +544,7 @@ export async function bootstrap(): Promise<void> {
           .join('、');
         log(`已拥有「${names}」，重复掉落已忽略。`, 'muted');
       }
-      hideEvent();
+      showEventResult(turn);
       afterUpdate(turn.character);
     } catch (error) {
       logError(error);
@@ -632,6 +664,9 @@ export async function bootstrap(): Promise<void> {
   });
   btnEvent.addEventListener('click', () => {
     void doEvent();
+  });
+  btnEventContinue.addEventListener('click', () => {
+    hideEvent();
   });
   el<HTMLButtonElement>('btn-back').addEventListener('click', () => {
     void (async () => {

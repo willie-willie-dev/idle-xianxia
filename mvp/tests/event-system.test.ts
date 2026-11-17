@@ -14,6 +14,7 @@ import {
   createEventSystem,
   pickEvent,
 } from '../src/event/index.ts';
+import { applyOption } from '../src/event/resolver.ts';
 import { nextSeed } from '../src/systems/rng.ts';
 
 function lianqiIds(): string[] {
@@ -317,4 +318,45 @@ test('lianqi-01：阶位为前期，且仍是青木诀保底', () => {
       `lianqi-01 选项「${option.text}」应保底青木诀`,
     );
   }
+});
+
+test('全部事件、全部选项都有 outcome，且 trim 后长度 ≥ 10', () => {
+  for (const event of EVENTS) {
+    for (const [index, option] of event.options.entries()) {
+      assert.equal(typeof option.outcome, 'string', `${event.id}[${index}] 应有 outcome`);
+      assert.ok(
+        option.outcome.trim().length >= 10,
+        `${event.id}[${index}] outcome trim 后长度应 ≥ 10`,
+      );
+    }
+  }
+});
+
+test('同一事件内不同选项的 outcome 两两不同', () => {
+  for (const event of EVENTS) {
+    const outcomes = event.options.map((option) => option.outcome);
+    assert.equal(
+      new Set(outcomes).size,
+      outcomes.length,
+      `${event.id} 的选项 outcome 应两两不同`,
+    );
+  }
+});
+
+test('applyOption 返回的 optionText 等于选项 text、outcome 等于选项 outcome', () => {
+  for (const event of EVENTS) {
+    event.options.forEach((option, index) => {
+      const result = applyOption({ cultivation: 0, rngSeed: 1 }, event, index);
+      assert.equal(result.optionText, option.text, `${event.id}[${index}] optionText`);
+      assert.equal(result.outcome, option.outcome, `${event.id}[${index}] outcome`);
+    });
+  }
+});
+
+test('lianqi-02 的 index 0 与 1 调用 applyOption，返回的 outcome 不同', () => {
+  const event = EVENTS.find((entry) => entry.id === 'lianqi-02');
+  assert.ok(event);
+  const first = applyOption({ cultivation: 0, rngSeed: 1 }, event, 0);
+  const second = applyOption({ cultivation: 0, rngSeed: 1 }, event, 1);
+  assert.notEqual(first.outcome, second.outcome);
 });

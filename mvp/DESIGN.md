@@ -139,6 +139,7 @@ applyOption(character, event, optionIndex): { cultivation, plotFlags, nextSeed }
 | FAIL_LOSS_RATE | 0.20（失败扣当前修为，阶位不变） |
 | DEFAULT_ROOTS | 乾15 坤10 五行各15 |
 | LOCATIONS | 火山（火200+土30）、灵泉（水200+木50） |
+| EVENT_OPTION | 每个选项含 `text`、`outcome`（选后结果交代）、可选的 `cultivationGain` / `plotFlag` / `grants` |
 | EVENT_POOL | 24 条，按 **9 阶位**分池（炼气/筑基/金丹 × 前/中/后，每阶 ≥2 条；`lianqi-01` 固定炼气·前期，青木诀保底），单选项 +5~15 修为或剧情标记 |
 | ACTION_DAYS | 吸收 1 天 / 历练 0 天 / 突破 0 天（事件可用 `days` 覆盖为 2~7 天） |
 

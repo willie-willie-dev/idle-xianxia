@@ -10,6 +10,8 @@ import type { Realm, RealmStage } from '../types.ts';
 /** 事件的一个选项：给修为、给剧情标记、掉功法，至少给一样。 */
 export interface EventOption {
   text: string;
+  /** 选项被选中后的结果交代。 */
+  outcome: string;
   cultivationGain?: number;
   plotFlag?: string;
   /**
@@ -56,10 +58,11 @@ export interface PickResult {
 export type PickEventResult = PickResult;
 
 /**
- * 结算一次选项的回报。
+ * 结算一次选项的回报（应用层称作 `OptionOutcome`）。
  *
  * `cultivation` 是结算后的修为；`cultivationGain` 是本次增量；
  * `grants` 是选项掉落的功法 id（是否重复由应用层用背包判断）。
+ * `optionText` 是被选中的选项原文；`outcome` 是选完后的结果交代。
  */
 export interface ResolveResult {
   cultivation: number;
@@ -67,4 +70,7 @@ export interface ResolveResult {
   plotFlags: string[];
   grants: string[];
   nextSeed: number;
+  optionText: string;
+  /** 选项被选中后的结果交代。 */
+  outcome: string;
 }

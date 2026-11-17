@@ -515,6 +515,50 @@
         text-align: left;
       }
 
+      .event-result {
+        margin-top: 12px;
+        padding: 12px 14px 14px 16px;
+        border-left: 3px solid var(--jade);
+        border-radius: 0 8px 8px 0;
+        background: rgba(127, 183, 154, 0.08);
+      }
+
+      .event-result-choice {
+        margin: 0 0 8px;
+        font-size: 14px;
+        letter-spacing: 1px;
+        color: var(--gold);
+      }
+
+      #event-result-text {
+        margin: 0 0 12px;
+        font-size: 16px;
+        line-height: 1.8;
+        color: var(--paper);
+      }
+
+      .event-result-deltas {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin: 0 0 12px;
+      }
+
+      .event-result-deltas:empty {
+        display: none;
+      }
+
+      .event-delta {
+        display: inline-block;
+        padding: 1px 10px;
+        border: 1px solid rgba(127, 183, 154, 0.45);
+        border-radius: 999px;
+        background: rgba(127, 183, 154, 0.14);
+        color: var(--jade);
+        font-size: 13px;
+        line-height: 1.7;
+      }
+
       .log {
         display: flex;
         flex-direction: column;
@@ -653,6 +697,12 @@
             <h3 id="event-title"></h3>
             <p id="event-text"></p>
             <div id="event-options" class="event-options"></div>
+            <div id="event-result" class="event-result hidden">
+              <div id="event-result-choice" class="event-result-choice"></div>
+              <p id="event-result-text"></p>
+              <div id="event-result-deltas" class="event-result-deltas"></div>
+              <button id="btn-event-continue" type="button" class="ghost">继续</button>
+            </div>
           </div>
 
           <h3>修行日志</h3>
