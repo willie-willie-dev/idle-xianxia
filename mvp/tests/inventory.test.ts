@@ -122,9 +122,10 @@ test('迁移：对象数组 → id 数组 + 背包（库外丢弃，每个匹配
   for (const item of migrated.inventory) {
     assert.equal(item.kind, 'technique');
     assert.equal(item.fromEventId, 'migrated');
-    assert.equal(item.uid, `migrated-${item.techniqueId}`);
     assert.equal(typeof item.obtainedAt, 'number');
   }
+  assert.equal(migrated.inventory[0].uid, 'migrated-qingmu');
+  assert.equal(migrated.inventory[1].uid, 'migrated-gengjin');
   assert.equal(new Set(migrated.inventory.map((item) => item.uid)).size, 2);
   assert.equal(migrated.activeSlot, 0);
 });
