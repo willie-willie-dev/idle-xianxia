@@ -1,18 +1,20 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { DEFAULT_EVENT_GAIN, REALMS } from '../src/data/balance.ts';
+import { DEFAULT_EVENT_GAIN, REALMS, REALM_STAGES } from '../src/data/balance.ts';
 import { EVENTS } from '../src/data/events.ts';
-import { applyOption, eligibleEvents, pickEvent } from '../src/systems/event.ts';
+import { applyOption, eligibleEvents, eventPool, pickEvent } from '../src/systems/event.ts';
 import { nextSeed } from '../src/systems/rng.ts';
-import type { GameEvent, Realm } from '../src/types.ts';
+import type { GameEvent, Realm, RealmStage } from '../src/types.ts';
 
 const SEED = 1;
 /** seed=1 推进后的种子，已验算。 */
 const SEED_AFTER_1 = 1015568748;
 
-function idsOf(realm: Realm): string[] {
-  return EVENTS.filter((event) => event.realm === realm).map((event) => event.id);
+function idsOf(realm: Realm, stage?: RealmStage): string[] {
+  return EVENTS.filter(
+    (event) => event.realm === realm && (stage === undefined || event.stage === stage),
+  ).map((event) => event.id);
 }
 
 test('事件池结构：24 条，每境界 8 条，id 唯一，2–3 个选项', () => {
@@ -24,6 +26,10 @@ test('事件池结构：24 条，每境界 8 条，id 唯一，2–3 个选项',
   assert.equal(new Set(ids).size, 24);
 
   for (const event of EVENTS) {
+    assert.ok(
+      (REALM_STAGES as readonly string[]).includes(event.stage),
+      `${event.id} 阶位无效：${event.stage}`,
+    );
     assert.ok(event.title.length > 0, `${event.id} 缺标题`);
     assert.ok(event.text.length > 0, `${event.id} 缺正文`);
     assert.ok(
@@ -40,58 +46,86 @@ test('事件池结构：24 条，每境界 8 条，id 唯一，2–3 个选项',
   }
 });
 
-test('pickEvent：只抽当前境界的事件', () => {
+test('pickEvent：只抽当前境界与阶位的事件', () => {
   for (const realm of REALMS) {
-    for (const seed of [1, 7, 42, 12345, 999999]) {
-      const { event } = pickEvent({ realm, doneIds: [], seed });
-      assert.notEqual(event, null);
-      assert.equal(event?.realm, realm);
-      assert.ok(idsOf(realm).includes(event!.id));
+    for (const stage of REALM_STAGES) {
+      for (const seed of [1, 7, 42, 12345, 999999]) {
+        const { event } = pickEvent({ realm, stage, doneIds: [], seed });
+        assert.notEqual(event, null, `${realm}·${stage} seed=${seed}`);
+        assert.equal(event?.realm, realm);
+        assert.equal(event?.stage, stage);
+        assert.ok(idsOf(realm, stage).includes(event!.id));
+      }
     }
   }
 });
 
 test('pickEvent：抽不到 doneIds 里已有的事件', () => {
-  const lianqiIds = idsOf('炼气');
-  const done = lianqiIds.slice(0, 7);
-  const last = lianqiIds[7];
+  const stage = '前期' as const;
+  const lianqiIds = idsOf('炼气', stage);
+  const done = lianqiIds.slice(0, -1);
+  const last = lianqiIds[lianqiIds.length - 1];
 
   for (const seed of [1, 2, 3, 4, 5]) {
-    const { event } = pickEvent({ realm: '炼气', doneIds: done, seed });
+    const { event } = pickEvent({ realm: '炼气', stage, doneIds: done, seed });
     assert.equal(event?.id, last);
   }
 
-  // 已完成全部 → null
-  const empty = pickEvent({ realm: '炼气', doneIds: lianqiIds, seed: 3 });
+  // 本阶已完成全部 → null，种子仍然推进
+  const empty = pickEvent({ realm: '炼气', stage, doneIds: lianqiIds, seed: 3 });
   assert.equal(empty.event, null);
   assert.equal(empty.nextSeed, nextSeed(3));
 });
 
 test('pickEvent：本境界抽完返回 null，其它境界不受影响', () => {
-  const { event } = pickEvent({ realm: '炼气', doneIds: idsOf('炼气'), seed: SEED });
+  const done = idsOf('炼气');
+  const { event } = pickEvent({
+    realm: '炼气',
+    stage: '前期',
+    doneIds: done,
+    seed: SEED,
+  });
   assert.equal(event, null);
-  const still = pickEvent({ realm: '筑基', doneIds: idsOf('炼气'), seed: SEED });
+  const still = pickEvent({
+    realm: '筑基',
+    stage: '前期',
+    doneIds: done,
+    seed: SEED,
+  });
   assert.equal(still.event?.realm, '筑基');
+  assert.equal(still.event?.stage, '前期');
 });
 
 test('pickEvent：同种子可复现，不同种子会换一条', () => {
-  const input = { realm: '炼气' as const, doneIds: [] as string[], seed: SEED };
+  const input = {
+    realm: '炼气' as const,
+    stage: '前期' as const,
+    doneIds: [] as string[],
+    seed: SEED,
+  };
   assert.deepEqual(pickEvent(input), pickEvent(input));
 
-  const a = pickEvent({ realm: '炼气', doneIds: [], seed: 1 });
-  const b = pickEvent({ realm: '炼气', doneIds: [], seed: 7 });
+  const a = pickEvent({ realm: '炼气', stage: '前期', doneIds: [], seed: 1 });
+  const b = pickEvent({ realm: '炼气', stage: '前期', doneIds: [], seed: 2 });
   assert.notEqual(a.event?.id, b.event?.id);
+  assert.equal(a.event?.stage, '前期');
+  assert.equal(b.event?.stage, '前期');
   assert.equal(a.nextSeed, SEED_AFTER_1);
-  assert.equal(b.nextSeed, nextSeed(7));
+  assert.equal(b.nextSeed, nextSeed(2));
 });
 
-test('eligibleEvents：过滤境界 + 已完成，保持池内顺序', () => {
-  const pool = eligibleEvents('筑基', ['zhuji-02', 'zhuji-05']);
+test('eligibleEvents：过滤境界、阶位 + 已完成，保持池内顺序', () => {
+  const pool = eligibleEvents('筑基', '中期', ['zhuji-02', 'zhuji-05']);
   assert.deepEqual(
     pool.map((event) => event.id),
-    ['zhuji-01', 'zhuji-03', 'zhuji-04', 'zhuji-06', 'zhuji-07', 'zhuji-08'],
+    ['zhuji-03', 'zhuji-04', 'zhuji-06'],
   );
-  assert.deepEqual(eligibleEvents('炼气', idsOf('炼气')), []);
+  assert.ok(pool.every((event) => event.realm === '筑基' && event.stage === '中期'));
+  assert.deepEqual(eligibleEvents('炼气', '前期', idsOf('炼气')), []);
+  assert.deepEqual(
+    eligibleEvents('炼气', '前期', [], eventPool).map((event) => event.id),
+    idsOf('炼气', '前期'),
+  );
 });
 
 test('applyOption：每个选项都有非空回报（修为 > 0 或剧情标记）', () => {
@@ -119,6 +153,7 @@ test('applyOption：没写修为的选项给兜底增量（不空结算）', () 
   const synthetic: GameEvent = {
     id: 'test-empty',
     realm: '炼气',
+    stage: '前期',
     title: '空选项',
     text: '只给剧情标记，不给修为。',
     options: [{ text: '记下这件事', plotFlag: '只留名' }],
@@ -145,14 +180,24 @@ test('applyOption：修为累加、种子推进，越界选项抛错', () => {
 test('事件循环可跑：抽 8 次把炼气池清空', () => {
   let seed = 1;
   const doneIds: string[] = [];
-  for (let i = 0; i < 8; i += 1) {
-    const picked = pickEvent({ realm: '炼气', doneIds, seed });
-    assert.notEqual(picked.event, null);
-    const outcome = applyOption({ cultivation: 0, rngSeed: picked.nextSeed }, picked.event!, 0);
-    assert.ok(outcome.cultivationGain > 0);
-    doneIds.push(picked.event!.id);
-    seed = outcome.nextSeed;
+  for (const stage of REALM_STAGES) {
+    const count = idsOf('炼气', stage).length;
+    for (let i = 0; i < count; i += 1) {
+      const picked = pickEvent({ realm: '炼气', stage, doneIds, seed });
+      assert.notEqual(picked.event, null);
+      assert.equal(picked.event?.realm, '炼气');
+      assert.equal(picked.event?.stage, stage);
+      const outcome = applyOption(
+        { cultivation: 0, rngSeed: picked.nextSeed },
+        picked.event!,
+        0,
+      );
+      assert.ok(outcome.cultivationGain > 0);
+      doneIds.push(picked.event!.id);
+      seed = outcome.nextSeed;
+    }
+    assert.equal(pickEvent({ realm: '炼气', stage, doneIds, seed }).event, null);
   }
+  assert.equal(doneIds.length, 8);
   assert.equal(new Set(doneIds).size, 8);
-  assert.equal(pickEvent({ realm: '炼气', doneIds, seed }).event, null);
 });

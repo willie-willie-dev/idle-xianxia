@@ -15,6 +15,7 @@ import type { GameEvent, ResolveResult } from './types.ts';
 /** `next()` 需要的角色切片。 */
 export interface EventCharacterView {
   realm: Realm;
+  stage: GameEvent['stage'];
   rngSeed: number;
   eventState?: { doneIds?: readonly string[] };
 }
@@ -33,7 +34,7 @@ export interface EventResolveView {
 
 /** 事件系统服务。 */
 export interface EventSystem {
-  /** 抽一条当前境界的事件；`event === null` 表示本境界已历练完。 */
+  /** 抽一条当前境界与阶位的事件；`event === null` 表示本境界本阶位已历练完。 */
   next(character: EventCharacterView): NextEventResult;
   /** 结算指定事件 + 选项；未知事件 / 越界选项抛错。 */
   resolve(
@@ -63,6 +64,7 @@ export function createEventSystem(deps: EventSystemDeps = {}): EventSystem {
       const picked = pickEvent(
         {
           realm: character.realm,
+          stage: character.stage,
           doneIds: character.eventState?.doneIds ?? [],
           seed: character.rngSeed,
         },

@@ -61,7 +61,7 @@ export interface BreakthroughTurn {
   result: BreakthroughResult;
 }
 
-/** 一次抽事件的回报。`event === null` 表示本境界已历练完。 */
+/** 一次抽事件的回报。`event === null` 表示本境界本阶位已历练完。 */
 export interface DrawEventTurn {
   character: MvpCharacter;
   event: GameEvent | null;
@@ -252,10 +252,15 @@ class GameAppImpl implements GameApp {
     return { character: updated, result };
   }
 
-  /** 抽一条当前境界的事件；种子推进写回存档。 */
+  /** 抽一条当前境界、当前阶位的事件；种子推进写回存档。 */
   async drawEvent(): Promise<DrawEventTurn> {
     const character = await this.#require();
-    const picked = this.#events.next(character);
+    const picked = this.#events.next({
+      realm: character.realm,
+      stage: character.stage,
+      rngSeed: character.rngSeed,
+      eventState: character.eventState,
+    });
     const updated = await this.#repo.update(character.id, {
       rngSeed: picked.seed,
     });

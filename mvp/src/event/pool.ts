@@ -1,5 +1,5 @@
 /**
- * 事件池索引：把 `data/events.ts` 的数组整理成「按 id」与「按境界」两张表。
+ * 事件池索引：把 `data/events.ts` 的数组整理成「按 id」「按境界」与「按境界+阶位」三张表。
  *
  * 数据本身不搬文件；这一层只读、无副作用、不碰时间与存储。
  */
@@ -18,8 +18,10 @@ export interface EventPool {
   byId(id: string): GameEvent | null;
   /** 某境界的全部事件（池内顺序）。 */
   byRealm(realm: Realm): readonly GameEvent[];
-  /** 某境界里还没做过的事件（`doneIds` 之外的）。 */
-  eligible(query: EventPoolQuery): GameEvent[];
+  /** 某境界、某阶位的全部事件（池内顺序）。 */
+  byRealmStage(realm: Realm, stage: GameEvent['stage']): readonly GameEvent[];
+  /** 某境界、某阶位里还没做过的事件（`doneIds` 之外的）。 */
+  eligible(query: EventPoolQuery & { stage: GameEvent['stage'] }): GameEvent[];
 }
 
 /**
@@ -31,6 +33,7 @@ export function createEventPool(events: readonly GameEvent[] = EVENTS): EventPoo
   const all = [...events];
   const byIdIndex = new Map<string, GameEvent>();
   const byRealmIndex = new Map<Realm, GameEvent[]>();
+  const byRealmStageIndex = new Map<Realm, Map<GameEvent['stage'], GameEvent[]>>();
 
   for (const event of all) {
     if (byIdIndex.has(event.id)) {
@@ -43,6 +46,17 @@ export function createEventPool(events: readonly GameEvent[] = EVENTS): EventPoo
     } else {
       bucket.push(event);
     }
+    let stageMap = byRealmStageIndex.get(event.realm);
+    if (stageMap === undefined) {
+      stageMap = new Map();
+      byRealmStageIndex.set(event.realm, stageMap);
+    }
+    const stageBucket = stageMap.get(event.stage);
+    if (stageBucket === undefined) {
+      stageMap.set(event.stage, [event]);
+    } else {
+      stageBucket.push(event);
+    }
   }
 
   return {
@@ -50,9 +64,10 @@ export function createEventPool(events: readonly GameEvent[] = EVENTS): EventPoo
     all: () => all,
     byId: (id) => byIdIndex.get(id) ?? null,
     byRealm: (realm) => byRealmIndex.get(realm) ?? [],
+    byRealmStage: (realm, stage) => byRealmStageIndex.get(realm)?.get(stage) ?? [],
     eligible(query) {
       const doneIds = query.doneIds ?? [];
-      return (byRealmIndex.get(query.realm) ?? []).filter(
+      return (byRealmStageIndex.get(query.realm)?.get(query.stage) ?? []).filter(
         (event) => !doneIds.includes(event.id),
       );
     },

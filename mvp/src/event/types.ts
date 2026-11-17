@@ -5,7 +5,7 @@
  * 由 `event/pool.ts` 建索引；`types.ts` 再从这里转出，避免两处定义漂移。
  */
 
-import type { Realm } from '../types.ts';
+import type { Realm, RealmStage } from '../types.ts';
 
 /** 事件的一个选项：给修为、给剧情标记、掉功法，至少给一样。 */
 export interface EventOption {
@@ -23,6 +23,8 @@ export interface EventOption {
 export interface GameEvent {
   id: string;
   realm: Realm;
+  /** 境界内阶位：前期 / 中期 / 后期。 */
+  stage: RealmStage;
   title: string;
   text: string;
   /**
