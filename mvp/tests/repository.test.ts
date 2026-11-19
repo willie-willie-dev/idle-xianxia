@@ -42,6 +42,8 @@ test('全链路：create → list → get → update → remove → activeId', a
       'name',
       'realm',
       'stage',
+      'stamina',
+      'staminaMax',
     ]);
   }
   assert.equal(summaries[0].id, third.id);

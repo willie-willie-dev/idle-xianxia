@@ -100,6 +100,27 @@ export const START_SLOTS: readonly (TechniqueId | null)[] = [null, null, null];
 /** 新手保底功法：`lianqi-01 山道拾遗` 必掉，也是第一本功法的推荐值。 */
 export const BOOTSTRAP_TECHNIQUE_ID: TechniqueId = 'qingmu';
 
+/** 消耗品效果：回体力、加修为、或保证下次破境成功。 */
+export interface ConsumableDef {
+  id: string;
+  name: string;
+  kind: 'stamina' | 'cultivation' | 'breakthrough';
+  amount: number;
+}
+
+/** 消耗品库。破境丹 `amount` 为 0，效果由 `kind: "breakthrough"` 表达。 */
+export const CONSUMABLE_LIBRARY: readonly ConsumableDef[] = [
+  { id: 'huiqi-dan', name: '回气丹', kind: 'stamina', amount: 30 },
+  { id: 'zhixue-cao', name: '止血草', kind: 'stamina', amount: 15 },
+  { id: 'juyuan-dan', name: '聚元丹', kind: 'cultivation', amount: 40 },
+  { id: 'pojing-dan', name: '破境丹', kind: 'breakthrough', amount: 0 },
+];
+
+/** 按 id 取消耗品；未知 id 返回 null。 */
+export function findConsumable(id: string): ConsumableDef | null {
+  return CONSUMABLE_LIBRARY.find((def) => def.id === id) ?? null;
+}
+
 /** 按 id 取功法；未知 id 返回 null。 */
 export function findTechnique(id: string): TechniqueDef | null {
   return TECHNIQUE_LIBRARY.find((def) => def.id === id) ?? null;
@@ -151,6 +172,17 @@ export const ACTION_DAYS = {
   event: 0,
   breakthrough: 0,
 } as const;
+
+/** 体力上限与开局体力。 */
+export const STAMINA_MAX = 100;
+export const STAMINA_INITIAL = 100;
+
+/** 吸收一次消耗的体力。 */
+export const ABSORB_STAMINA_COST = 5;
+
+/** 调息：回复体力与占用天数。 */
+export const REST_STAMINA_GAIN = 40;
+export const REST_DAYS = 1;
 
 /** 初始修为。 */
 export const INITIAL_CULTIVATION = 0;

@@ -19,6 +19,10 @@ export interface EventOption {
    * 掉落进背包，需要玩家自己装备才生效；同一功法只保留一本。
    */
   grants?: string[];
+  /** 选择后扣体力。 */
+  staminaCost?: number;
+  /** 消耗品 id，来自 `CONSUMABLE_LIBRARY`。 */
+  itemGrants?: string[];
 }
 
 /** 一条事件。 */
@@ -62,6 +66,8 @@ export type PickEventResult = PickResult;
  *
  * `cultivation` 是结算后的修为；`cultivationGain` 是本次增量；
  * `grants` 是选项掉落的功法 id（是否重复由应用层用背包判断）。
+ * `staminaCost` 是本次扣除的体力，未写则为 0；
+ * `itemGrants` 是选项给予的消耗品 id，未写则为空数组。
  * `optionText` 是被选中的选项原文；`outcome` 是选完后的结果交代。
  */
 export interface ResolveResult {
@@ -69,6 +75,8 @@ export interface ResolveResult {
   cultivationGain: number;
   plotFlags: string[];
   grants: string[];
+  staminaCost: number;
+  itemGrants: string[];
   nextSeed: number;
   optionText: string;
   /** 选项被选中后的结果交代。 */

@@ -23,14 +23,18 @@ import {
   ROOTS_SUM_TOLERANCE,
   START_INVENTORY,
   START_SLOTS,
+  STAMINA_INITIAL,
+  STAMINA_MAX,
   TECHNIQUE_LIBRARY,
   TECHNIQUE_SLOT_COUNT,
   cultivationMaxOf,
+  findConsumable,
   findTechnique,
   nextThresholdOf,
 } from '../data/balance.ts';
 import type {
   CharacterSummary,
+  ConsumableItem,
   CreateCharacterInput,
   InventoryItem,
   MvpCharacter,
@@ -142,6 +146,9 @@ export function buildCharacter(
     techniques,
     activeSlot: 0,
     inventory: [...START_INVENTORY],
+    stamina: STAMINA_INITIAL,
+    staminaMax: STAMINA_MAX,
+    breakthroughGuard: false,
     eventState: { doneIds: [], count: 0 },
     plotFlags: [],
     time: { day: INITIAL_DAY, tick: 0 },
@@ -204,39 +211,106 @@ function matchTechniqueId(value: unknown): TechniqueId | null {
   return null;
 }
 
-/** 规范化背包：丢掉坏条目、按 `techniqueId` 去重、补齐缺字段。 */
+/**
+ * 规范化背包：丢掉坏条目。
+ *
+ * - `kind === "technique"`，以及老存档里没有 `kind` 但有 `techniqueId` 的条目：
+ *   按功法处理，`techniqueId` 必须在功法库里，同 id 只留第一条；
+ * - `kind === "consumable"`：`itemId` 必须在消耗品库里，同 id 合并堆叠
+ *   （`count` 相加，每条至少 1），`uid` 沿用第一条。
+ */
 function normalizeInventory(character: MvpCharacter): InventoryItem[] {
   const raw: unknown = character.inventory;
   if (!Array.isArray(raw)) return [];
   const now = Number.isFinite(character.updatedAt) ? character.updatedAt : Date.now();
   const items: InventoryItem[] = [];
-  const seen = new Set<string>();
+  const seenTechniques = new Set<string>();
+  const consumableAt = new Map<string, number>();
   for (const entry of raw) {
     if (entry === null || typeof entry !== 'object') continue;
-    const item = entry as Partial<InventoryItem>;
-    const techniqueId =
-      typeof item.techniqueId === 'string' ? item.techniqueId : null;
-    if (techniqueId === null || findTechnique(techniqueId) === null) continue;
-    if (seen.has(techniqueId)) continue;
-    seen.add(techniqueId);
-    items.push({
-      uid:
-        typeof item.uid === 'string' && item.uid.length > 0
-          ? item.uid
-          : crypto.randomUUID(),
-      kind: 'technique',
-      techniqueId,
-      fromEventId:
-        typeof item.fromEventId === 'string' && item.fromEventId.length > 0
-          ? item.fromEventId
-          : 'migrated',
-      obtainedAt:
-        typeof item.obtainedAt === 'number' && Number.isFinite(item.obtainedAt)
-          ? item.obtainedAt
-          : now,
-    });
+    const item = entry as {
+      uid?: unknown;
+      kind?: unknown;
+      techniqueId?: unknown;
+      itemId?: unknown;
+      count?: unknown;
+      fromEventId?: unknown;
+      obtainedAt?: unknown;
+    };
+    const kind = itemKind(item);
+    if (kind === 'technique') {
+      const techniqueId =
+        typeof item.techniqueId === 'string' ? item.techniqueId : null;
+      if (techniqueId === null || findTechnique(techniqueId) === null) continue;
+      if (seenTechniques.has(techniqueId)) continue;
+      seenTechniques.add(techniqueId);
+      items.push({
+        uid: itemUid(item.uid),
+        kind: 'technique',
+        techniqueId,
+        fromEventId: itemFromEventId(item.fromEventId),
+        obtainedAt: itemObtainedAt(item.obtainedAt, now),
+      });
+      continue;
+    }
+    if (kind !== 'consumable') continue;
+    const itemId = typeof item.itemId === 'string' ? item.itemId : null;
+    if (itemId === null || findConsumable(itemId) === null) continue;
+    const count = itemCount(item.count);
+    const existing = consumableAt.get(itemId);
+    if (existing !== undefined) {
+      const prev = items[existing];
+      if (prev !== undefined && prev.kind === 'consumable') {
+        prev.count = Math.max(1, prev.count + count);
+      }
+      continue;
+    }
+    const stacked: ConsumableItem = {
+      uid: itemUid(item.uid),
+      kind: 'consumable',
+      itemId,
+      count,
+      fromEventId: itemFromEventId(item.fromEventId),
+      obtainedAt: itemObtainedAt(item.obtainedAt, now),
+    };
+    consumableAt.set(itemId, items.length);
+    items.push(stacked);
   }
   return items;
+}
+
+/** 没有 `kind` 但有 `techniqueId` 的老条目按功法处理；其余未知 kind 丢掉。 */
+function itemKind(item: {
+  kind?: unknown;
+  techniqueId?: unknown;
+}): 'technique' | 'consumable' | null {
+  if (item.kind === 'technique') return 'technique';
+  if (item.kind === 'consumable') return 'consumable';
+  if (
+    (item.kind === undefined || item.kind === null) &&
+    typeof item.techniqueId === 'string'
+  ) {
+    return 'technique';
+  }
+  return null;
+}
+
+function itemUid(value: unknown): string {
+  return typeof value === 'string' && value.length > 0 ? value : crypto.randomUUID();
+}
+
+function itemFromEventId(value: unknown): string {
+  return typeof value === 'string' && value.length > 0 ? value : 'migrated';
+}
+
+function itemObtainedAt(value: unknown, now: number): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : now;
+}
+
+/** 堆叠数量：非有限数或小于 1 时按 1。 */
+function itemCount(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return 1;
+  return Math.max(1, value);
 }
 
 /**
@@ -253,7 +327,30 @@ export function withDefaults(character: MvpCharacter): MvpCharacter {
   migrateTime(next);
   migrateTechniques(next);
   migrateStage(next);
+  migrateStamina(next);
   return next;
+}
+
+/**
+ * 体力与破境丹：老存档缺字段时补开局值。
+ *
+ * `stamina` 夹在 `[0, staminaMax]`；`staminaMax` 只在缺失或非有限数时补 `STAMINA_MAX`。
+ */
+function migrateStamina(character: MvpCharacter): void {
+  const rawMax: unknown = character.staminaMax;
+  if (typeof rawMax !== 'number' || !Number.isFinite(rawMax)) {
+    character.staminaMax = STAMINA_MAX;
+  }
+  const rawStamina: unknown = character.stamina;
+  const stamina =
+    typeof rawStamina === 'number' && Number.isFinite(rawStamina)
+      ? rawStamina
+      : STAMINA_INITIAL;
+  const upper = character.staminaMax > 0 ? character.staminaMax : 0;
+  character.stamina = Math.min(upper, Math.max(0, stamina));
+  if (typeof character.breakthroughGuard !== 'boolean') {
+    character.breakthroughGuard = false;
+  }
 }
 
 /**
@@ -284,7 +381,13 @@ function migrateTechniques(character: MvpCharacter): void {
   const now = Number.isFinite(character.updatedAt) ? character.updatedAt : Date.now();
   for (const id of nextSlots) {
     if (id === null) continue;
-    if (inventory.some((item) => item.techniqueId === id)) continue;
+    if (
+      inventory.some(
+        (item) => item.kind === 'technique' && item.techniqueId === id,
+      )
+    ) {
+      continue;
+    }
     inventory.push({
       uid: `migrated-${id}`,
       kind: 'technique',
@@ -351,6 +454,8 @@ function summarize(character: MvpCharacter): CharacterSummary {
     realm: character.realm,
     stage: character.stage,
     cultivation: character.cultivation,
+    stamina: character.stamina,
+    staminaMax: character.staminaMax,
     day: character.time.day,
     createdAt: character.createdAt,
   };

@@ -50,24 +50,39 @@ export interface Technique {
 /** 功法槽位下标：固定 3 槽。 */
 export type TechniqueSlot = 0 | 1 | 2;
 
-/** 物品大类；MVP 只有功法一类。 */
-export type ItemKind = 'technique';
+/** 物品大类：功法或消耗品。 */
+export type ItemKind = 'technique' | 'consumable';
 
 /**
- * 背包里的一条物品。
+ * 背包里的功法实例。
  *
  * `uid` 是实例 id（同一种功法只保留一条，`techniqueId` 才是去重键）；
  * `fromEventId` 记录来源，迁移来的老存档记为 `'migrated'`。
  */
-export interface InventoryItem {
+export interface TechniqueItem {
   uid: string;
-  kind: ItemKind;
+  kind: 'technique';
   /** 指向 `TECHNIQUE_LIBRARY` 的 id。 */
   techniqueId: string;
   /** 来源事件 id；迁移补进来的用 `'migrated'`。 */
   fromEventId: string;
   obtainedAt: number;
 }
+
+/** 背包里的消耗品堆叠。`itemId` 指向 `CONSUMABLE_LIBRARY`。 */
+export interface ConsumableItem {
+  uid: string;
+  kind: 'consumable';
+  /** 指向 `CONSUMABLE_LIBRARY` 的 id。 */
+  itemId: string;
+  count: number;
+  /** 来源事件 id；迁移补进来的用 `'migrated'`。 */
+  fromEventId: string;
+  obtainedAt: number;
+}
+
+/** 背包里的一条物品：功法或消耗品。 */
+export type InventoryItem = TechniqueItem | ConsumableItem;
 
 /** 事件进度：已完成的 id 与累计次数。 */
 export interface EventState {
@@ -93,6 +108,10 @@ export interface MvpCharacter {
   activeSlot: TechniqueSlot;
   /** 背包：功法只能通过历练事件获得，装备到槽位后才生效。 */
   inventory: InventoryItem[];
+  stamina: number;
+  staminaMax: number;
+  /** 破境丹：下次突破必定成功。 */
+  breakthroughGuard: boolean;
   eventState: EventState;
   /** 剧情标记（R3 的第二类回报），去重累积，写入存档。 */
   plotFlags: string[];
@@ -111,6 +130,8 @@ export interface CharacterSummary {
   realm: Realm;
   stage: RealmStage;
   cultivation: number;
+  stamina: number;
+  staminaMax: number;
   day: number;
   createdAt: number;
 }
@@ -130,6 +151,8 @@ export interface BreakthroughInput {
   nextThreshold: number;
   realm: Realm;
   stage: RealmStage;
+  /** 本次必定成功（破境丹）。 */
+  forcedSuccess?: boolean;
 }
 
 export interface BreakthroughResult {

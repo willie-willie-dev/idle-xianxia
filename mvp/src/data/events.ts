@@ -28,6 +28,7 @@ export const EVENTS: readonly GameEvent[] = [
         text: '就地以神识探入',
         cultivationGain: 8,
         grants: ['qingmu'],
+        staminaCost: 10,
         outcome:
           '你就在雨里闭上眼，把神识探进玉简。烫意顺着掌心冲上来，你膝盖一软，磕在泥里，一段吐纳之法在眼前展开又散去。等你站稳，玉简已经凉了，掌心却留下一圈久久不退的红印。',
       },
@@ -60,6 +61,7 @@ export const EVENTS: readonly GameEvent[] = [
         text: '把自己的干粮也分他一半',
         cultivationGain: 6,
         plotFlag: '结善缘',
+        itemGrants: ['zhixue-cao'],
         outcome:
           '老道接过干粮，没道谢，只把火拨得更旺。天亮时他先走了，灰烬里留下半张饼和一枚磨得发亮的小木牌。',
       },
@@ -89,6 +91,7 @@ export const EVENTS: readonly GameEvent[] = [
         text: '带回洞府炼药',
         cultivationGain: 12,
         plotFlag: '伤生灵',
+        staminaCost: 15,
         outcome:
           '你用衣襟裹住它往回走，鳞上的青光一点点暗下去。丹炉里药香起来时，你听见一声极轻的水响，像有什么从锅沿上跳开了。药成了，你对着那炉青烟坐了很久，终究没有咽下去。',
       },
@@ -125,6 +128,7 @@ export const EVENTS: readonly GameEvent[] = [
         text: '让出丹药，换他一枚旧符',
         cultivationGain: 9,
         plotFlag: '通人情',
+        itemGrants: ['huiqi-dan'],
         outcome:
           '你把丹药递过去，伸手要他腰间那枚边角磨白的旧符。他愣了愣，还是解下来换给你，符纸旧，上面的灵纹却还温着。他离开时没再按剑，经过你身边，脚步放轻了一点。',
       },
@@ -140,6 +144,7 @@ export const EVENTS: readonly GameEvent[] = [
       {
         text: '在院中打坐到天亮',
         cultivationGain: 15,
+        staminaCost: 10,
         outcome:
           '你在石阶上盘膝坐下，月华凉得像一层水，顺着发顶往下渗。坐到后半夜，四肢先僵后暖，呼吸自己找到了深浅。天亮你睁眼，衣上结了一层薄霜，胸口却是热的，腿站起来时还在发麻。',
       },
@@ -197,6 +202,7 @@ export const EVENTS: readonly GameEvent[] = [
       {
         text: '运足灵力，全力一击',
         cultivationGain: 12,
+        staminaCost: 20,
         outcome:
           '你把灵力尽数压进这一击，剑锋砸上试剑石，虎口震得发麻。石面上多出一道新痕，比前人的浅，却是你自己砍出来的。你退开两步，腕骨还在跳，嘴里漫开一点血腥，心里却畅快得想笑。',
       },
@@ -259,6 +265,7 @@ export const EVENTS: readonly GameEvent[] = [
         text: '布一座聚灵阵，就此闭关',
         cultivationGain: 15,
         grants: ['liehuo'],
+        itemGrants: ['juyuan-dan'],
         outcome:
           '你在石壁下布开聚灵阵，封了洞门，任那条灵脉的热一寸寸挤进阵里。闭关的日子里，火意从丹田里自己烧起来，一段驭火的口诀在耳鸣里一句句清楚。出关时洞壁都被烘得发干，你指尖还留着烫，那套火法却已经能随手唤起。',
       },
@@ -295,6 +302,7 @@ export const EVENTS: readonly GameEvent[] = [
       {
         text: '闭门谢客，先冲一次关',
         cultivationGain: 13,
+        staminaCost: 15,
         outcome:
           '你隔着门说不见客，听他在外面笑了一声，酒坛搁在台阶上，脚步声远了。你转身冲关，灵气在经脉里冲撞了许久，关口松了一线，人却像被掏空。隔夜你才开门，坛酒还在原处，酒香已经散尽，台阶上只剩一圈湿印。',
       },
@@ -311,6 +319,7 @@ export const EVENTS: readonly GameEvent[] = [
         text: '迎上去，把人护在身后',
         cultivationGain: 12,
         plotFlag: '护山',
+        staminaCost: 20,
         outcome:
           '你挡在药农前面，妖狼的爪子撕开你的袖口，血顺着小臂往下淌。孩子的哭声从你身后远去，你把狼一步步逼回破开的山门，直到它夹着尾巴没进林子。人是护住了，你靠在门柱上，掌心的血把木纹染深了一块。',
       },
@@ -334,6 +343,7 @@ export const EVENTS: readonly GameEvent[] = [
         text: '以灵力强压炉火',
         cultivationGain: 10,
         plotFlag: '护丹',
+        staminaCost: 20,
         outcome:
           '你把灵力压上去，炉火在雷纹里反冲，掌心被燎起一层水泡。丹到底没炸，炉盖落下时，一枚还烫的丹躺在灰里，圆，却裂了一道细缝。你坐在地上喘，丹房的梁还在响，手里那枚丹温着，人却半天站不起来。',
       },
@@ -363,6 +373,7 @@ export const EVENTS: readonly GameEvent[] = [
         text: '整衣拜上一拜',
         cultivationGain: 8,
         plotFlag: '敬剑冢',
+        itemGrants: ['zhixue-cao'],
         outcome:
           '你整了整衣襟，在剑冢前拜下去。风过断剑，铮铮忽然齐了一声，像有人在土下应你这一拜。你起身时膝上全是干土，剑都还插在原处，只有最深那柄的剑穗无风自颤，随即又静了。',
       },
@@ -401,6 +412,7 @@ export const EVENTS: readonly GameEvent[] = [
       {
         text: '借故离席，回去炼丹',
         cultivationGain: 7,
+        itemGrants: ['huiqi-dan'],
         outcome:
           '你找了个炼丹的借口起身，他看了你一眼，没有留。回到丹房，炉火按离开前的火候续上，渡口那些话你一句没听完。他后来走没走你不知道，炉里那炉丹倒按你自己的火候成了。',
       },
@@ -447,12 +459,14 @@ export const EVENTS: readonly GameEvent[] = [
         text: '开门，借雷淬体',
         cultivationGain: 14,
         plotFlag: '引雷淬体',
+        staminaCost: 20,
         outcome:
           '你推开门，雷就落在肩上。焦味从衣料里炸开，皮肤被劈得发麻，可那股雷劲顺着骨缝走了一遍，又从脚底泄进土里。你站在门口，衣袍焦了一片，人还立着，雷声却已经远了。',
       },
       {
         text: '收心守一，把雷声关在门外',
         cultivationGain: 10,
+        itemGrants: ['juyuan-dan'],
         outcome:
           '你把门掩上，坐回原处，把心收在一处，雷声就隔在门板外。雷在屋上滚了很久，门缝里只漏进一点白光，没有一道落进屋里。雷停之后你推门，门槛外的石阶被劈黑了一块，你身上干干净净，什么也没沾上。',
       },
@@ -472,6 +486,7 @@ export const EVENTS: readonly GameEvent[] = [
         text: '以识海温养，一坐三日',
         cultivationGain: 15,
         grants: ['gengjin'],
+        itemGrants: ['pojing-dan'],
         outcome:
           '你把识海覆上去，温着那颗金丹坐了很久。它转得慢，每一圈都把散乱的灵气压回石壁里，一段沉而锋利的金行法门在温养里自己清晰起来。你起身时洞府已经安静，丹田里的转动稳得像石磨。',
       },
@@ -479,6 +494,7 @@ export const EVENTS: readonly GameEvent[] = [
         text: '以剑意淬炼，逼它再快一分',
         cultivationGain: 10,
         plotFlag: '剑淬金丹',
+        staminaCost: 20,
         outcome:
           '你以剑意逼那颗金丹，要它转得再快。剑意割过丹纹，丹猛地一旋，洞府里的灵气被绞出一声锐响，你经脉里像有细刃走过。它是快了，可那一圈转得发狠，收剑时你舌尖还尝到一丝血味。',
       },
@@ -525,6 +541,7 @@ export const EVENTS: readonly GameEvent[] = [
         text: '迎雷而立，任它劈下',
         cultivationGain: 15,
         plotFlag: '迎雷',
+        staminaCost: 25,
         outcome:
           '你走出洞府，站在云最低的地方，任那道雷劈下来。雷光砸在肩上，金丹被震得嗡鸣，焦痕从衣袍烧到锁骨，人却没有跪。云层散开时你还立着，天像是称过你，暂时把下一道收了回去。',
       },
@@ -554,6 +571,7 @@ export const EVENTS: readonly GameEvent[] = [
         text: '赴盟，看看他们图什么',
         cultivationGain: 10,
         plotFlag: '入盟',
+        itemGrants: ['pojing-dan'],
         outcome:
           '你依约赴盟。席上几家道统各坐一方，话绕了几圈，才把真正要你做的事推到面前：合看一处新开的秘境，名额按宗平分，你的金丹算他们缺的那一股压阵。你没当场应下，可你的名字已经被写进与会的簿子，出了殿门仍有人朝你看。',
       },
@@ -600,6 +618,7 @@ export const EVENTS: readonly GameEvent[] = [
         text: '以心血重铸，续它剑身',
         cultivationGain: 12,
         plotFlag: '重铸旧剑',
+        staminaCost: 25,
         outcome:
           '你割开掌心，以心血浇上断口，一寸一寸把残剑续了回去。剑鸣从远钟收成一线，识海里那一声声敲击终于停了，新铸的剑身却热得发烫。天亮时它不再自己响，你掌心的伤口还在跳，像把心跳分给了这柄剑。',
       },
@@ -625,6 +644,7 @@ export const EVENTS: readonly GameEvent[] = [
         cultivationGain: 13,
         plotFlag: '斩妄念',
         grants: ['xuanshui'],
+        staminaCost: 20,
         outcome:
           '你拔剑进识海，一间一间斩过去，门里那些坐着的自己应声而碎。剑过处门扇合死，识海静成一潭不起波的水，一段沉静的水行法门在空处自己清楚起来。你出定时掌心还握着剑，那些被斩开的自己再没有把门推开。',
       },

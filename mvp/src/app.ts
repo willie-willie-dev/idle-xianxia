@@ -6,7 +6,10 @@
  */
 
 import {
+  ABSORB_STAMINA_COST,
   ACTION_DAYS,
+  REST_DAYS,
+  REST_STAMINA_GAIN,
   assertTechniqueSlot,
   findTechnique,
   nextStageOf,
@@ -23,6 +26,8 @@ import { absorb } from './systems/absorb.ts';
 import type { AbsorbResult, Location } from './systems/absorb.ts';
 import { tryBreakthrough } from './systems/breakthrough.ts';
 import type { BreakthroughResult } from './types.ts';
+import { useConsumable } from './systems/consumables.ts';
+import type { ConsumableEffect } from './systems/consumables.ts';
 import { cultivate } from './systems/cultivate.ts';
 import {
   activeTechnique,
@@ -32,6 +37,7 @@ import {
   hasTechnique,
 } from './systems/inventory.ts';
 import { nextSeed } from './systems/rng.ts';
+import { canAbsorb, restoreStamina, spendStamina } from './systems/stamina.ts';
 import { createTimeService } from './time/time-service.ts';
 import type { TimeService } from './time/time-service.ts';
 import type {
@@ -51,8 +57,22 @@ export interface AbsorbTurn {
   gain: number;
   /** 是否被修为上限截断。 */
   capped: boolean;
-  /** 当前生效槽位没有功法：修为 +0、不推进时间。 */
+  /** 当前生效槽位没有功法，或体力不够：修为 +0、不推进时间。 */
   blocked: boolean;
+  /** 被挡住的原因。无功法为 technique，体力不够为 stamina。 */
+  blockedReason?: 'technique' | 'stamina';
+}
+
+/** 一次打坐的回报。`gained` 是实际回复的体力（不超过上限）。 */
+export interface RestTurn {
+  character: MvpCharacter;
+  gained: number;
+}
+
+/** 使用一件消耗品的回报。 */
+export interface UseItemTurn {
+  character: MvpCharacter;
+  effect: ConsumableEffect;
 }
 
 /** 一次突破的回报。 */
@@ -76,6 +96,10 @@ export interface EventTurn {
   granted: InventoryItem[];
   /** 本次重复获得、已被忽略的功法 id。 */
   duplicates: string[];
+  /** 本次扣除的体力。 */
+  staminaCost: number;
+  /** 本次进入背包的消耗品 id（同一 id 可重复出现，表示继续堆叠）。 */
+  grantedItems: string[];
 }
 
 export interface GameApp {
@@ -88,6 +112,10 @@ export interface GameApp {
   leave(): Promise<void>;
   current(): MvpCharacter | null;
   absorb(locationId?: string): Promise<AbsorbTurn>;
+  /** 打坐：时间前进，回复体力。不修炼、不推进种子。 */
+  rest(): Promise<RestTurn>;
+  /** 使用背包里的一件消耗品（按 uid）。 */
+  useItem(uid: string): Promise<UseItemTurn>;
   breakthrough(): Promise<BreakthroughTurn>;
   drawEvent(): Promise<DrawEventTurn>;
   resolveEvent(event: GameEvent, optionIndex: number): Promise<EventTurn>;
@@ -180,6 +208,7 @@ class GameAppImpl implements GameApp {
    *
    * 当前生效槽位没有功法时：修为 +0、不推进时间、不推进种子 ——
    * 「无功法不消耗」。
+   * 体力不够支付吸收消耗时同样不推进时间、不推进种子。
    */
   async absorb(locationId?: string): Promise<AbsorbTurn> {
     const character = await this.#require();
@@ -194,9 +223,22 @@ class GameAppImpl implements GameApp {
         gain: 0,
         capped: false,
         blocked: true,
+        blockedReason: 'technique',
       };
     }
 
+    if (!canAbsorb(character.stamina, ABSORB_STAMINA_COST)) {
+      return {
+        character,
+        absorption: null,
+        gain: 0,
+        capped: false,
+        blocked: true,
+        blockedReason: 'stamina',
+      };
+    }
+
+    const stamina = spendStamina(character.stamina, ABSORB_STAMINA_COST);
     const location = findLocation(locationId ?? DEFAULT_LOCATION_ID);
     const absorption = absorb(location, character.spiritRoots, technique);
     const { cultivationGain } = cultivate(absorption);
@@ -208,6 +250,7 @@ class GameAppImpl implements GameApp {
 
     const updated = await this.#repo.update(character.id, {
       cultivation,
+      stamina,
       time: advanced.state,
       rngSeed: nextSeed(character.rngSeed),
     });
@@ -221,6 +264,41 @@ class GameAppImpl implements GameApp {
     };
   }
 
+  /** 打坐：时间 +REST_DAYS，体力 +REST_STAMINA_GAIN（不超过上限）。不修炼、不推进种子。 */
+  async rest(): Promise<RestTurn> {
+    const character = await this.#require();
+    const before = Number.isFinite(character.stamina) ? character.stamina : 0;
+    const stamina = restoreStamina(
+      character.stamina,
+      REST_STAMINA_GAIN,
+      character.staminaMax,
+    );
+    const advanced = this.#time.advance(character.time, REST_DAYS, {
+      kind: 'manual',
+      label: '打坐',
+    });
+    const updated = await this.#repo.update(character.id, {
+      stamina,
+      time: advanced.state,
+    });
+    this.#character = updated;
+    return { character: updated, gained: stamina - before };
+  }
+
+  /** 使用背包里 uid 对应的消耗品，并把库存、体力、修为、破境保证写回存档。 */
+  async useItem(uid: string): Promise<UseItemTurn> {
+    const character = await this.#require();
+    const { character: next, effect } = useConsumable(character, uid);
+    const updated = await this.#repo.update(character.id, {
+      inventory: next.inventory,
+      stamina: next.stamina,
+      cultivation: next.cultivation,
+      breakthroughGuard: next.breakthroughGuard,
+    });
+    this.#character = updated;
+    return { character: updated, effect };
+  }
+
   /** 尝试突破；成功则阶位 +1、修为扣阈值、阈值与上限按新阶位重算。 */
   async breakthrough(): Promise<BreakthroughTurn> {
     const character = await this.#require();
@@ -230,6 +308,7 @@ class GameAppImpl implements GameApp {
         nextThreshold: character.nextThreshold,
         realm: character.realm,
         stage: character.stage,
+        forcedSuccess: character.breakthroughGuard,
       },
       character.rngSeed,
     );
@@ -247,6 +326,7 @@ class GameAppImpl implements GameApp {
       nextThreshold: result.nextThreshold,
       time: advanced.state,
       rngSeed: result.nextSeed,
+      breakthroughGuard: false,
     });
     this.#character = updated;
     return { character: updated, result };
@@ -296,6 +376,7 @@ class GameAppImpl implements GameApp {
       : [];
     const granted: InventoryItem[] = [];
     const duplicates: string[] = [];
+    const grantedItems: string[] = [];
     const obtainedAt = Date.now();
     for (const techniqueId of outcome.grants) {
       const item: InventoryItem = {
@@ -314,8 +395,32 @@ class GameAppImpl implements GameApp {
       }
     }
 
+    for (const itemId of outcome.itemGrants) {
+      const index = inventory.findIndex(
+        (entry) => entry.kind === 'consumable' && entry.itemId === itemId,
+      );
+      if (index >= 0) {
+        const current = inventory[index];
+        if (current.kind === 'consumable') {
+          inventory[index] = { ...current, count: current.count + 1 };
+        }
+      } else {
+        inventory.push({
+          uid: crypto.randomUUID(),
+          kind: 'consumable',
+          itemId,
+          count: 1,
+          fromEventId: event.id,
+          obtainedAt,
+        });
+      }
+      grantedItems.push(itemId);
+    }
+
+    const stamina = spendStamina(character.stamina, outcome.staminaCost);
     const updated = await this.#repo.update(character.id, {
       cultivation: Math.min(outcome.cultivation, character.cultivationMax),
+      stamina,
       rngSeed: outcome.nextSeed,
       eventState: { doneIds, count: character.eventState.count + 1 },
       plotFlags,
@@ -323,7 +428,15 @@ class GameAppImpl implements GameApp {
       inventory,
     });
     this.#character = updated;
-    return { character: updated, outcome, event, granted, duplicates };
+    return {
+      character: updated,
+      outcome,
+      event,
+      granted,
+      duplicates,
+      staminaCost: outcome.staminaCost,
+      grantedItems,
+    };
   }
 
   /** 切换生效槽位；吸收始终用 `techniques[activeSlot]`。 */

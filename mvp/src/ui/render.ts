@@ -9,11 +9,12 @@ import { canBreakthrough, createBrowserApp } from '../app.ts';
 import type { EventTurn, GameApp } from '../app.ts';
 import {
   TECHNIQUE_SLOT_COUNT,
+  findConsumable,
   findTechnique,
   nextStageOf,
   stageLabel,
 } from '../data/balance.ts';
-import type { TechniqueDef } from '../data/balance.ts';
+import type { ConsumableDef, TechniqueDef } from '../data/balance.ts';
 import type {
   CharacterSummary,
   GameEvent,
@@ -58,6 +59,13 @@ function el<T extends HTMLElement>(id: string): T {
   const node = document.getElementById(id);
   if (node === null) throw new Error(`页面缺少节点 #${id}`);
   return node as unknown as T;
+}
+
+/** 消耗品效果说明。名称之外的文案只取自 `CONSUMABLE_LIBRARY` 的 kind / amount。 */
+function consumableEffectText(def: Pick<ConsumableDef, 'kind' | 'amount'>): string {
+  if (def.kind === 'stamina') return `体力恢复 +${def.amount}`;
+  if (def.kind === 'cultivation') return `修为增加 +${def.amount}`;
+  return '下次突破必成';
 }
 
 /** 显示一位小数，避免浮点尾巴刷屏。 */
@@ -111,6 +119,7 @@ export async function bootstrap(): Promise<void> {
   const btnAbsorb = el<HTMLButtonElement>('btn-absorb');
   const btnBreakthrough = el<HTMLButtonElement>('btn-breakthrough');
   const btnEvent = el<HTMLButtonElement>('btn-event');
+  const btnRest = el<HTMLButtonElement>('btn-rest');
   const charRoots = el<HTMLElement>('char-roots');
   const techniqueSlots = el<HTMLElement>('technique-slots');
   const techniqueHint = el<HTMLElement>('char-technique-hint');
@@ -156,11 +165,13 @@ export async function bootstrap(): Promise<void> {
     }
   }
 
-  /** 背包里已拥有的功法定义（按背包顺序，过滤库外脏数据）。 */
+  /** 背包里已拥有的功法定义（按背包顺序，过滤消耗品与库外脏数据）。 */
   function ownedDefs(character: MvpCharacter): TechniqueDef[] {
-    return character.inventory
-      .map((item) => findTechnique(item.techniqueId))
-      .filter((def): def is TechniqueDef => def !== null);
+    return character.inventory.flatMap((item) => {
+      if (item.kind !== 'technique') return [];
+      const def = findTechnique(item.techniqueId);
+      return def === null ? [] : [def];
+    });
   }
 
   /** 槽位里那本功法的定义；空槽 / 库外 id 返回 null。 */
@@ -248,59 +259,87 @@ export async function bootstrap(): Promise<void> {
   }
 
   /**
-   * 背包面板：一行一本功法（名称 + 效率 + 装备到 ①②③）。
+   * 背包面板：按 `item.kind` 分行。
+   * 功法：名称 + 效率 + 装备到 ①②③。
+   * 消耗品：名称 ×count + 效果说明，并给一个「使用」。
    * 功法只能从历练事件获得，这里不提供「凭空获得」的入口。
    */
   function renderInventory(character: MvpCharacter): void {
     clear(inventoryBox);
-    const owned = ownedDefs(character);
-    if (owned.length === 0) {
+    let shown = 0;
+    for (const item of character.inventory) {
+      if (item.kind === 'technique') {
+        const def = findTechnique(item.techniqueId);
+        if (def === null) continue;
+        shown += 1;
+
+        const row = make('div', 'inventory-row');
+        const info = make('div', 'inventory-info');
+        info.append(
+          make('span', 'inventory-name', def.name),
+          make(
+            'span',
+            'inventory-meta',
+            `效率 ${(def.absorbRate * def.convertRate).toFixed(3)}`,
+          ),
+        );
+
+        const actions = make('div', 'inventory-actions');
+        for (let index = 0; index < TECHNIQUE_SLOT_COUNT; index += 1) {
+          const slot = index as TechniqueSlot;
+          const equipped = character.techniques[slot] === def.id;
+          const mark = SLOT_MARKS[index] ?? String(index);
+          const button = make(
+            'button',
+            equipped ? 'inventory-equip is-equipped' : 'inventory-equip',
+            equipped ? `已装备${mark}` : `装备到${mark}`,
+          );
+          button.type = 'button';
+          button.id = `equip-${def.id}-${index}`;
+          button.disabled = equipped;
+          button.title = equipped
+            ? `「${def.name}」已在第 ${slot + 1} 槽`
+            : `把「${def.name}」装备到第 ${slot + 1} 槽`;
+          button.addEventListener('click', () => {
+            void equipItem(slot, item.uid);
+          });
+          actions.append(button);
+        }
+
+        row.append(info, actions);
+        inventoryBox.append(row);
+      } else if (item.kind === 'consumable') {
+        const def = findConsumable(item.itemId);
+        if (def === null) continue;
+        shown += 1;
+
+        const effect = consumableEffectText(def);
+        const row = make('div', 'inventory-row');
+        const info = make('div', 'inventory-info');
+        info.append(
+          make('span', 'inventory-name', `${def.name} ×${item.count}`),
+          make('span', 'inventory-meta', effect),
+        );
+
+        const actions = make('div', 'inventory-actions');
+        const button = make('button', 'inventory-equip', '使用');
+        button.type = 'button';
+        button.id = `use-${item.uid}`;
+        button.title = `使用「${def.name}」：${effect}`;
+        button.addEventListener('click', () => {
+          void useInventoryItem(item.uid);
+        });
+        actions.append(button);
+
+        row.append(info, actions);
+        inventoryBox.append(row);
+      }
+    }
+
+    if (shown === 0) {
       inventoryBox.append(
         make('p', 'inventory-empty', '背包空空。功法只能从历练事件中获得。'),
       );
-      return;
-    }
-    for (const def of owned) {
-      const item = character.inventory.find(
-        (entry) => entry.techniqueId === def.id,
-      );
-      if (item === undefined) continue;
-
-      const row = make('div', 'inventory-row');
-      const info = make('div', 'inventory-info');
-      info.append(
-        make('span', 'inventory-name', def.name),
-        make(
-          'span',
-          'inventory-meta',
-          `效率 ${(def.absorbRate * def.convertRate).toFixed(3)}`,
-        ),
-      );
-
-      const actions = make('div', 'inventory-actions');
-      for (let index = 0; index < TECHNIQUE_SLOT_COUNT; index += 1) {
-        const slot = index as TechniqueSlot;
-        const equipped = character.techniques[slot] === def.id;
-        const mark = SLOT_MARKS[index] ?? String(index);
-        const button = make(
-          'button',
-          equipped ? 'inventory-equip is-equipped' : 'inventory-equip',
-          equipped ? `已装备${mark}` : `装备到${mark}`,
-        );
-        button.type = 'button';
-        button.id = `equip-${def.id}-${index}`;
-        button.disabled = equipped;
-        button.title = equipped
-          ? `「${def.name}」已在第 ${slot + 1} 槽`
-          : `把「${def.name}」装备到第 ${slot + 1} 槽`;
-        button.addEventListener('click', () => {
-          void equipItem(slot, item.uid);
-        });
-        actions.append(button);
-      }
-
-      row.append(info, actions);
-      inventoryBox.append(row);
     }
   }
 
@@ -338,6 +377,8 @@ export async function bootstrap(): Promise<void> {
     el<HTMLElement>('char-cultivation-max').textContent = String(character.cultivationMax);
     el<HTMLElement>('char-threshold').textContent = String(character.nextThreshold);
     el<HTMLElement>('char-element').textContent = character.element;
+    el<HTMLElement>('char-stamina').textContent =
+      `${character.stamina} / ${character.staminaMax}`;
     renderRoots(character);
     renderTechniqueSlots(character);
     renderInventory(character);
@@ -502,9 +543,19 @@ export async function bootstrap(): Promise<void> {
         make('span', 'event-delta', `修为 +${fmt(turn.outcome.cultivationGain)}`),
       );
     }
+    if (turn.staminaCost > 0) {
+      eventResultDeltas.append(
+        make('span', 'event-delta', `体力 -${turn.staminaCost}`),
+      );
+    }
     for (const item of turn.granted) {
+      if (item.kind !== 'technique') continue;
       const name = findTechnique(item.techniqueId)?.name ?? item.techniqueId;
       eventResultDeltas.append(make('span', 'event-delta', `获得功法「${name}」`));
+    }
+    for (const itemId of turn.grantedItems) {
+      const name = findConsumable(itemId)?.name ?? itemId;
+      eventResultDeltas.append(make('span', 'event-delta', `获得〈${name}〉`));
     }
     for (const flag of turn.outcome.plotFlags) {
       if (flag.trim().length === 0) continue;
@@ -532,11 +583,13 @@ export async function bootstrap(): Promise<void> {
         `历练「${turn.event.title}」：修为 +${fmt(turn.outcome.cultivationGain)}${flags}`,
         'good',
       );
-      if (turn.granted.length > 0) {
-        const names = turn.granted
-          .map((item) => findTechnique(item.techniqueId)?.name ?? item.techniqueId)
-          .join('、');
-        log(`获得功法：「${names}」，已放入背包。`, 'good');
+      const techniqueNames = turn.granted.flatMap((item) =>
+        item.kind === 'technique'
+          ? [findTechnique(item.techniqueId)?.name ?? item.techniqueId]
+          : [],
+      );
+      if (techniqueNames.length > 0) {
+        log(`获得功法：「${techniqueNames.join('、')}」，已放入背包。`, 'good');
       }
       if (turn.duplicates.length > 0) {
         const names = turn.duplicates
@@ -556,7 +609,12 @@ export async function bootstrap(): Promise<void> {
     try {
       const turn = await state.app.absorb(locationSelect.value);
       if (turn.blocked) {
-        log('没有功法，灵气散于经脉（修为 +0，未耗时间）。', 'bad');
+        log(
+          turn.blockedReason === 'stamina'
+            ? '体力不足，先打坐恢复'
+            : '没有功法，灵气散于经脉（修为 +0，未耗时间）。',
+          'bad',
+        );
         afterUpdate(turn.character);
         return;
       }
@@ -564,6 +622,39 @@ export async function bootstrap(): Promise<void> {
       log(
         `吸收灵气：修为 +${fmt(turn.gain)}${tail}，第 ${turn.character.time.day} 天`,
       );
+      afterUpdate(turn.character);
+    } catch (error) {
+      logError(error);
+    }
+  }
+
+  async function doRest(): Promise<void> {
+    if (state.character === null) return;
+    try {
+      const turn = await state.app.rest();
+      log(
+        turn.gained === 0
+          ? `打坐：体力已满，第 ${turn.character.time.day} 天`
+          : `打坐：体力 +${fmt(turn.gained)}，第 ${turn.character.time.day} 天`,
+      );
+      afterUpdate(turn.character);
+    } catch (error) {
+      logError(error);
+    }
+  }
+
+  /** 使用背包里的一件消耗品。名称与效果说明取自消耗品库。 */
+  async function useInventoryItem(uid: string): Promise<void> {
+    if (state.character === null) return;
+    const item = state.character.inventory.find((entry) => entry.uid === uid);
+    const def =
+      item !== undefined && item.kind === 'consumable'
+        ? findConsumable(item.itemId)
+        : null;
+    try {
+      const turn = await state.app.useItem(uid);
+      const name = def?.name ?? '消耗品';
+      log(`使用「${name}」：${consumableEffectText(turn.effect)}`, 'good');
       afterUpdate(turn.character);
     } catch (error) {
       logError(error);
@@ -664,6 +755,9 @@ export async function bootstrap(): Promise<void> {
   });
   btnEvent.addEventListener('click', () => {
     void doEvent();
+  });
+  btnRest.addEventListener('click', () => {
+    void doRest();
   });
   btnEventContinue.addEventListener('click', () => {
     hideEvent();

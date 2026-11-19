@@ -5,6 +5,8 @@
  * - 金丹·后期已是顶阶，再点突破一律失败且保持原状；
  * - 修为不足阈值时失败且不扣修为（UI 会禁用按钮，这里是防御）；
  * - 掷骰 roll = seedToUnit(推进后的种子)，roll < FAIL_LOSS_RATE 即失败；
+ * - `forcedSuccess === true` 时跳过失败掷骰，直接成功（种子仍照常推进）；
+ *   已是顶阶或修为不足时仍失败；
  * - 失败：cultivation - floor(cultivation × FAIL_LOSS_RATE)，不得为负；
  * - 成功：阶位 +1（前期 → 中期 → 后期 → 下一境界·前期），
  *   cultivation - nextThreshold（不为负），阈值与上限按新阶位重算。
@@ -62,8 +64,8 @@ export function tryBreakthrough(
   if (target === null) return stay(0);
   if (cultivation < input.nextThreshold) return stay(0);
 
-  // 掷骰：低于失败率即失败。种子 → [0,1) 的映射是均匀的。
-  if (seedToUnit(rolled) < FAIL_LOSS_RATE) {
+  // 破境丹：跳过失败掷骰，直接成功。种子已在上面推进，顶阶与修为不足仍走 stay。
+  if (input.forcedSuccess !== true && seedToUnit(rolled) < FAIL_LOSS_RATE) {
     return stay(breakthroughLoss(cultivation));
   }
 
