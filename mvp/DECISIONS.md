@@ -118,3 +118,10 @@ mvp/
 | **app 新 API** | `equipTechnique(slot, itemUid)`、`ownedTechniques()`、`inventory()`；`setSlotTechnique(slot, id)` 保留但要求已拥有 | 装备不改 `activeSlot`；UI 下拉只列背包功法，槽位按钮切换生效位 |
 | **老存档迁移** | 对象数组 / 单 `technique` 按 id 或名字匹配 `TECHNIQUE_LIBRARY` → id 数组；匹配不到置 null；匹配到的补进 `inventory`（`fromEventId: 'migrated'`） | 缺 `inventory` → `[]`，缺 / 非法 `activeSlot` → 0；`migrateStage` / `migrateTime` 不变 |
 | **测试** | 61 条旧测试全部保留并更新；新增 `inventory` / `event-system` / `absorb-gate` 三个文件，共 85 条 | `node --test tests/*.test.ts` 85 通过；`npx vite build` 通过 |
+
+## 九、破境丹口径（2026-11-19 W 拍板：方案 3）
+
+- 破境丹是**突破必需品**：没有它不能突破
+- 每次突破**消耗 1 枚**，**成功与失败都消耗**（方案 3，惩罚最重）
+- 破境丹不能手动使用；缺口时界面提示、按钮禁用
+- 事件池合计可拿 10 枚，覆盖 8 次突破 + 2 枚容错
