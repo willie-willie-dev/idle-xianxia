@@ -5,7 +5,6 @@ import { createMemoryApp } from '../src/app.ts';
 import type { GameApp } from '../src/app.ts';
 import {
   ABSORB_STAMINA_COST,
-  FAIL_LOSS_RATE,
   STAMINA_INITIAL,
   STAMINA_MAX,
 } from '../src/data/balance.ts';
@@ -16,11 +15,7 @@ import {
   restoreStamina,
   spendStamina,
 } from '../src/systems/stamina.ts';
-import { nextSeed, seedToUnit } from '../src/systems/rng.ts';
 import type { GameEvent, MvpCharacter } from '../src/types.ts';
-
-/** seed=3027450565 → 下一枚 roll ≈ 0.0505，低于失败线。破境丹应改写这次失败。 */
-const LOSE_SEED = 3027450565;
 
 function eventById(id: string): GameEvent {
   const event = EVENTS.find((entry) => entry.id === id);
@@ -142,7 +137,7 @@ test('lianqi-01 选项 0：结算后体力 -10', async () => {
   assert.equal(turn.character.stamina, created.stamina - 10);
 });
 
-test('消耗品：同 id 堆成 2，回气丹恢复 30 并封顶，破境丹保证一次突破后解除', async () => {
+test('消耗品：同 id 堆成 2，回气丹恢复 30 并封顶，破境丹不能直接使用', async () => {
   const app = createMemoryApp();
   await app.create('沈青');
 
@@ -186,14 +181,5 @@ test('消耗品：同 id 堆成 2，回气丹恢复 30 并封顶，破境丹保�
   );
   assert.ok(dan !== undefined && dan.kind === 'consumable');
 
-  const used = await app.useItem(dan.uid);
-  assert.equal(used.effect.kind, 'breakthrough');
-  assert.equal(used.character.breakthroughGuard, true);
-
-  const ready = tune(app, { rngSeed: LOSE_SEED });
-  ready.cultivation = ready.nextThreshold;
-  assert.ok(seedToUnit(nextSeed(LOSE_SEED)) < FAIL_LOSS_RATE);
-  const turned = await app.breakthrough();
-  assert.equal(turned.result.success, true);
-  assert.equal(turned.character.breakthroughGuard, false);
+  await assert.rejects(() => app.useItem(dan.uid), /不能直接使用/);
 });

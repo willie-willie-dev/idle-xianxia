@@ -110,8 +110,6 @@ export interface MvpCharacter {
   inventory: InventoryItem[];
   stamina: number;
   staminaMax: number;
-  /** 破境丹：下次突破必定成功。 */
-  breakthroughGuard: boolean;
   eventState: EventState;
   /** 剧情标记（R3 的第二类回报），去重累积，写入存档。 */
   plotFlags: string[];
@@ -151,8 +149,8 @@ export interface BreakthroughInput {
   nextThreshold: number;
   realm: Realm;
   stage: RealmStage;
-  /** 本次必定成功（破境丹）。 */
-  forcedSuccess?: boolean;
+  /** 是否持有破境丹。没有则本次突破不结算。 */
+  hasPoJing: boolean;
 }
 
 export interface BreakthroughResult {
@@ -164,6 +162,8 @@ export interface BreakthroughResult {
   nextThreshold: number;
   /** 失败扣除的修为量，成功时为 0。 */
   lost: number;
+  /** 缺少破境丹时为 true：本次不结算（不扣修为）。 */
+  blocked?: boolean;
   /** 推进后的种子（线性同余），必须存回角色。 */
   nextSeed: number;
 }

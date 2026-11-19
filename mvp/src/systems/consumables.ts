@@ -2,7 +2,8 @@
  * 消耗品：纯函数。按背包 uid 使用一件，返回新角色与效果，不改入参。
  *
  * - 只认 `kind === "consumable"` 的条目，找不到就抛错；
- * - 效果按 `CONSUMABLE_LIBRARY` 的 kind：回体力、加修为、或放下一次破境保证；
+ * - 效果按 `CONSUMABLE_LIBRARY` 的 kind：回体力或加修为；
+ * - `kind === "breakthrough"`（破境丹）不能直接使用，调用即抛错、不扣数量；
  * - 使用后 count - 1，扣到 0 时从背包移除。
  */
 
@@ -50,6 +51,9 @@ export function useConsumable(
   if (def === null) {
     throw new Error(`未知消耗品：${item.itemId}`);
   }
+  if (def.kind === 'breakthrough') {
+    throw new Error('破境丹不能直接使用，突破时会自动消耗');
+  }
 
   let consumed = false;
   const inventory = character.inventory.flatMap((entry) => {
@@ -67,14 +71,12 @@ export function useConsumable(
 
   if (def.kind === 'stamina') {
     next.stamina = restoreStamina(character.stamina, def.amount, character.staminaMax);
-  } else if (def.kind === 'cultivation') {
+  } else {
     next.cultivation = addCultivation(
       character.cultivation,
       def.amount,
       character.cultivationMax,
     );
-  } else {
-    next.breakthroughGuard = true;
   }
 
   return { character: next, effect };

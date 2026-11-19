@@ -8,6 +8,7 @@
 import { canBreakthrough, createBrowserApp } from '../app.ts';
 import type { EventTurn, GameApp } from '../app.ts';
 import {
+  POJING_ITEM_ID,
   TECHNIQUE_SLOT_COUNT,
   findConsumable,
   findTechnique,
@@ -120,6 +121,7 @@ export async function bootstrap(): Promise<void> {
   const btnBreakthrough = el<HTMLButtonElement>('btn-breakthrough');
   const btnEvent = el<HTMLButtonElement>('btn-event');
   const btnRest = el<HTMLButtonElement>('btn-rest');
+  const breakthroughHint = el<HTMLElement>('breakthrough-hint');
   const charRoots = el<HTMLElement>('char-roots');
   const techniqueSlots = el<HTMLElement>('technique-slots');
   const techniqueHint = el<HTMLElement>('char-technique-hint');
@@ -258,10 +260,31 @@ export async function bootstrap(): Promise<void> {
     }
   }
 
+  /** 背包里是否还有至少一枚破境丹（itemId 为 pojing-dan 且 count > 0）。 */
+  function holdsPoJing(character: MvpCharacter): boolean {
+    return character.inventory.some(
+      (item) =>
+        item.kind === 'consumable' &&
+        item.itemId === POJING_ITEM_ID &&
+        item.count > 0,
+    );
+  }
+
+  /** 没有破境丹时提示去炼气/筑基事件；持有则藏起。 */
+  function renderBreakthroughHint(character: MvpCharacter): void {
+    if (holdsPoJing(character)) {
+      breakthroughHint.classList.add('hidden');
+      return;
+    }
+    breakthroughHint.textContent = '突破需要破境丹：留意炼气/筑基的相关事件';
+    breakthroughHint.classList.remove('hidden');
+  }
+
   /**
    * 背包面板：按 `item.kind` 分行。
    * 功法：名称 + 效率 + 装备到 ①②③。
    * 消耗品：名称 ×count + 效果说明，并给一个「使用」。
+   * 破境丹不能手动使用：效果说明为「突破消耗」，不给「使用」按钮。
    * 功法只能从历练事件获得，这里不提供「凭空获得」的入口。
    */
   function renderInventory(character: MvpCharacter): void {
@@ -313,25 +336,29 @@ export async function bootstrap(): Promise<void> {
         if (def === null) continue;
         shown += 1;
 
-        const effect = consumableEffectText(def);
+        const isPoJing = item.itemId === POJING_ITEM_ID;
+        const effect = isPoJing ? '突破消耗' : consumableEffectText(def);
         const row = make('div', 'inventory-row');
         const info = make('div', 'inventory-info');
         info.append(
           make('span', 'inventory-name', `${def.name} ×${item.count}`),
           make('span', 'inventory-meta', effect),
         );
+        row.append(info);
 
-        const actions = make('div', 'inventory-actions');
-        const button = make('button', 'inventory-equip', '使用');
-        button.type = 'button';
-        button.id = `use-${item.uid}`;
-        button.title = `使用「${def.name}」：${effect}`;
-        button.addEventListener('click', () => {
-          void useInventoryItem(item.uid);
-        });
-        actions.append(button);
+        if (!isPoJing) {
+          const actions = make('div', 'inventory-actions');
+          const button = make('button', 'inventory-equip', '使用');
+          button.type = 'button';
+          button.id = `use-${item.uid}`;
+          button.title = `使用「${def.name}」：${effect}`;
+          button.addEventListener('click', () => {
+            void useInventoryItem(item.uid);
+          });
+          actions.append(button);
+          row.append(actions);
+        }
 
-        row.append(info, actions);
         inventoryBox.append(row);
       }
     }
@@ -382,6 +409,7 @@ export async function bootstrap(): Promise<void> {
     renderRoots(character);
     renderTechniqueSlots(character);
     renderInventory(character);
+    renderBreakthroughHint(character);
     renderProgress(character);
 
     const top = nextStageOf(character.realm, character.stage) === null;
@@ -666,7 +694,9 @@ export async function bootstrap(): Promise<void> {
     const before = stageLabel(state.character.realm, state.character.stage);
     try {
       const turn = await state.app.breakthrough();
-      if (turn.result.success) {
+      if (turn.blocked === true) {
+        log('缺少破境丹，无法突破', 'bad');
+      } else if (turn.result.success) {
         log(
           `突破成功：${before} → ${stageLabel(turn.character.realm, turn.character.stage)}，修为 ${fmt(turn.character.cultivation)}`,
           'good',

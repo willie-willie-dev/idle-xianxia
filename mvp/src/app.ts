@@ -8,6 +8,7 @@
 import {
   ABSORB_STAMINA_COST,
   ACTION_DAYS,
+  POJING_ITEM_ID,
   REST_DAYS,
   REST_STAMINA_GAIN,
   assertTechniqueSlot,
@@ -79,6 +80,8 @@ export interface UseItemTurn {
 export interface BreakthroughTurn {
   character: MvpCharacter;
   result: BreakthroughResult;
+  /** 没有破境丹：本次不结算、不写档。 */
+  blocked?: boolean;
 }
 
 /** 一次抽事件的回报。`event === null` 表示本境界本阶位已历练完。 */
@@ -132,11 +135,49 @@ export interface GameApp {
   remove(id: string): Promise<void>;
 }
 
-/** 修为达到阈值、且还没到顶阶时，才可以点突破。 */
+/** 背包里破境丹的枚数（同 id 的多条堆叠合计）。 */
+function poJingCount(character: MvpCharacter): number {
+  const inventory = Array.isArray(character.inventory) ? character.inventory : [];
+  let total = 0;
+  for (const item of inventory) {
+    if (item.kind !== 'consumable' || item.itemId !== POJING_ITEM_ID) continue;
+    const count = Number.isFinite(item.count) ? item.count : 0;
+    if (count > 0) total += count;
+  }
+  return total;
+}
+
+/** 背包里是否还有至少一枚破境丹。 */
+function hasPoJing(character: MvpCharacter): boolean {
+  return poJingCount(character) > 0;
+}
+
+/** 从背包扣 1 枚破境丹；减到 0 则移除该条。 */
+function consumePoJing(inventory: InventoryItem[]): InventoryItem[] {
+  const next = inventory.map((item) => ({ ...item }));
+  const index = next.findIndex(
+    (entry) =>
+      entry.kind === 'consumable' &&
+      entry.itemId === POJING_ITEM_ID &&
+      entry.count > 0,
+  );
+  if (index < 0) return next;
+  const current = next[index];
+  if (current.kind !== 'consumable') return next;
+  if (current.count <= 1) {
+    next.splice(index, 1);
+  } else {
+    next[index] = { ...current, count: current.count - 1 };
+  }
+  return next;
+}
+
+/** 修为达到阈值、还没到顶阶、且持有破境丹时，才可以点突破。 */
 export function canBreakthrough(character: MvpCharacter): boolean {
   return (
     nextStageOf(character.realm, character.stage) !== null &&
-    character.cultivation >= character.nextThreshold
+    character.cultivation >= character.nextThreshold &&
+    hasPoJing(character)
   );
 }
 
@@ -285,7 +326,7 @@ class GameAppImpl implements GameApp {
     return { character: updated, gained: stamina - before };
   }
 
-  /** 使用背包里 uid 对应的消耗品，并把库存、体力、修为、破境保证写回存档。 */
+  /** 使用背包里 uid 对应的消耗品，并把库存、体力、修为写回存档。 */
   async useItem(uid: string): Promise<UseItemTurn> {
     const character = await this.#require();
     const { character: next, effect } = useConsumable(character, uid);
@@ -293,22 +334,42 @@ class GameAppImpl implements GameApp {
       inventory: next.inventory,
       stamina: next.stamina,
       cultivation: next.cultivation,
-      breakthroughGuard: next.breakthroughGuard,
     });
     this.#character = updated;
     return { character: updated, effect };
   }
 
-  /** 尝试突破；成功则阶位 +1、修为扣阈值、阈值与上限按新阶位重算。 */
+  /**
+   * 尝试突破。没有破境丹则不结算、不写档。
+   * 有丹则无论成败都消耗 1 枚；成功则阶位 +1、修为扣阈值。
+   */
   async breakthrough(): Promise<BreakthroughTurn> {
     const character = await this.#require();
+    if (!hasPoJing(character)) {
+      return {
+        character,
+        blocked: true,
+        result: {
+          blocked: true,
+          success: false,
+          realm: character.realm,
+          stage: character.stage,
+          cultivation: character.cultivation,
+          cultivationMax: character.cultivationMax,
+          nextThreshold: character.nextThreshold,
+          lost: 0,
+          nextSeed: character.rngSeed,
+        },
+      };
+    }
+
     const result = tryBreakthrough(
       {
         cultivation: character.cultivation,
         nextThreshold: character.nextThreshold,
         realm: character.realm,
         stage: character.stage,
-        forcedSuccess: character.breakthroughGuard,
+        hasPoJing: true,
       },
       character.rngSeed,
     );
@@ -318,6 +379,9 @@ class GameAppImpl implements GameApp {
       ACTION_DAYS.breakthrough,
       { kind: 'breakthrough' },
     );
+    const inventory = consumePoJing(
+      Array.isArray(character.inventory) ? character.inventory : [],
+    );
     const updated = await this.#repo.update(character.id, {
       realm: result.realm,
       stage: result.stage,
@@ -326,10 +390,10 @@ class GameAppImpl implements GameApp {
       nextThreshold: result.nextThreshold,
       time: advanced.state,
       rngSeed: result.nextSeed,
-      breakthroughGuard: false,
+      inventory,
     });
     this.#character = updated;
-    return { character: updated, result };
+    return { character: updated, result, blocked: false };
   }
 
   /** 抽一条当前境界、当前阶位的事件；种子推进写回存档。 */

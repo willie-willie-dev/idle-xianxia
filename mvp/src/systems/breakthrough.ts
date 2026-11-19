@@ -2,14 +2,14 @@
  * 突破：纯函数，输入修为 / 阈值 / 境界 / 阶位 / 种子，输出结果与下一个种子。
  *
  * 规则（DESIGN.md §5 + R4）：
+ * - 没有破境丹（hasPoJing === false）时失败且保持原状，blocked 为 true，不扣修为；
  * - 金丹·后期已是顶阶，再点突破一律失败且保持原状；
  * - 修为不足阈值时失败且不扣修为（UI 会禁用按钮，这里是防御）；
- * - 掷骰 roll = seedToUnit(推进后的种子)，roll < FAIL_LOSS_RATE 即失败；
- * - `forcedSuccess === true` 时跳过失败掷骰，直接成功（种子仍照常推进）；
- *   已是顶阶或修为不足时仍失败；
+ * - 持有破境丹时掷骰 roll = seedToUnit(推进后的种子)，roll < FAIL_LOSS_RATE 即失败；
  * - 失败：cultivation - floor(cultivation × FAIL_LOSS_RATE)，不得为负；
  * - 成功：阶位 +1（前期 → 中期 → 后期 → 下一境界·前期），
- *   cultivation - nextThreshold（不为负），阈值与上限按新阶位重算。
+ *   cultivation - nextThreshold（不为负），阈值与上限按新阶位重算；
+ * - 无论成功、失败还是被挡住，种子都照常推进。
  */
 
 import {
@@ -48,8 +48,8 @@ export function tryBreakthrough(
   const realm: Realm = input.realm;
   const stage: RealmStage = input.stage;
 
-  /** 保持原状（只推进种子）的失败结果。 */
-  const stay = (lost: number): BreakthroughResult => ({
+  /** 保持原状（只推进种子）的失败结果。blocked 表示缺少破境丹、本次不结算。 */
+  const stay = (lost: number, blocked = false): BreakthroughResult => ({
     success: false,
     realm,
     stage,
@@ -57,15 +57,17 @@ export function tryBreakthrough(
     cultivationMax: cultivationMaxOf(realm, stage),
     nextThreshold: nextThresholdOf(realm, stage),
     lost,
+    ...(blocked ? { blocked: true } : {}),
     nextSeed: rolled,
   });
+
+  if (input.hasPoJing === false) return stay(0, true);
 
   const target = nextStageOf(realm, stage);
   if (target === null) return stay(0);
   if (cultivation < input.nextThreshold) return stay(0);
 
-  // 破境丹：跳过失败掷骰，直接成功。种子已在上面推进，顶阶与修为不足仍走 stay。
-  if (input.forcedSuccess !== true && seedToUnit(rolled) < FAIL_LOSS_RATE) {
+  if (seedToUnit(rolled) < FAIL_LOSS_RATE) {
     return stay(breakthroughLoss(cultivation));
   }
 

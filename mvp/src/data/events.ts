@@ -84,6 +84,7 @@ export const EVENTS: readonly GameEvent[] = [
         text: '捧回溪中放走',
         cultivationGain: 10,
         plotFlag: '放生灵鲤',
+        itemGrants: ['pojing-dan', 'pojing-dan'],
         outcome:
           '你双手拢着那条灵鲤，走回有水的地方，轻轻一送。它尾一摆，青光没进水里，只剩一圈涟漪。你掌心湿凉，站了好一会儿，胸口那点说不清的紧才松开。',
       },
@@ -210,6 +211,7 @@ export const EVENTS: readonly GameEvent[] = [
         text: '以指沿那道痕描过',
         cultivationGain: 5,
         plotFlag: '初悟剑意',
+        itemGrants: ['pojing-dan'],
         outcome:
           '你没有出剑，只用指腹顺着那道深痕慢慢描下去。痕里的雨水冰凉，指尖走到尽头，你忽然明白这一剑当年是怎么落下的。收回手，指上留着一道浅浅的白印，像被剑气割过，并不疼，那一点意思却留在心里，赶不走。',
       },
@@ -381,6 +383,7 @@ export const EVENTS: readonly GameEvent[] = [
         text: '挖出最深那柄残剑',
         cultivationGain: 13,
         plotFlag: '取残剑',
+        itemGrants: ['pojing-dan', 'pojing-dan'],
         outcome:
           '你跪在土里把最深那柄残剑刨出来，剑身离土的一刻，其余断剑同时一静。你把这柄缺口剑背在肩上离开，荒原的风从空坑里灌上来，铮铮声再也不响。身后只剩一个新坑，坑沿的干土还在往下塌。',
       },
@@ -466,7 +469,7 @@ export const EVENTS: readonly GameEvent[] = [
       {
         text: '收心守一，把雷声关在门外',
         cultivationGain: 10,
-        itemGrants: ['juyuan-dan'],
+        itemGrants: ['juyuan-dan', 'pojing-dan'],
         outcome:
           '你把门掩上，坐回原处，把心收在一处，雷声就隔在门板外。雷在屋上滚了很久，门缝里只漏进一点白光，没有一道落进屋里。雷停之后你推门，门槛外的石阶被劈黑了一块，你身上干干净净，什么也没沾上。',
       },
@@ -644,6 +647,7 @@ export const EVENTS: readonly GameEvent[] = [
         cultivationGain: 13,
         plotFlag: '斩妄念',
         grants: ['xuanshui'],
+        itemGrants: ['pojing-dan', 'pojing-dan'],
         staminaCost: 20,
         outcome:
           '你拔剑进识海，一间一间斩过去，门里那些坐着的自己应声而碎。剑过处门扇合死，识海静成一潭不起波的水，一段沉静的水行法门在空处自己清楚起来。你出定时掌心还握着剑，那些被斩开的自己再没有把门推开。',

@@ -100,7 +100,7 @@ export const START_SLOTS: readonly (TechniqueId | null)[] = [null, null, null];
 /** 新手保底功法：`lianqi-01 山道拾遗` 必掉，也是第一本功法的推荐值。 */
 export const BOOTSTRAP_TECHNIQUE_ID: TechniqueId = 'qingmu';
 
-/** 消耗品效果：回体力、加修为、或保证下次破境成功。 */
+/** 消耗品效果：回体力、加修为、或破境（只能在突破时消耗）。 */
 export interface ConsumableDef {
   id: string;
   name: string;
@@ -108,7 +108,10 @@ export interface ConsumableDef {
   amount: number;
 }
 
-/** 消耗品库。破境丹 `amount` 为 0，效果由 `kind: "breakthrough"` 表达。 */
+/** 破境丹物品 id。不能手动使用，突破时自动消耗。 */
+export const POJING_ITEM_ID = 'pojing-dan';
+
+/** 消耗品库。破境丹 `amount` 为 0，`kind` 保持 `"breakthrough"`。 */
 export const CONSUMABLE_LIBRARY: readonly ConsumableDef[] = [
   { id: 'huiqi-dan', name: '回气丹', kind: 'stamina', amount: 30 },
   { id: 'zhixue-cao', name: '止血草', kind: 'stamina', amount: 15 },
