@@ -212,6 +212,10 @@
         color: var(--paper-dim);
       }
 
+      #breakthrough-hint.is-weak {
+        opacity: 0.62;
+      }
+
       .error {
         margin: 0 0 12px;
         font-size: 13px;
@@ -493,10 +497,32 @@
       }
 
       .event-panel h3 {
-        margin: 0 0 6px;
+        display: inline-block;
+        margin: 0 8px 8px 0;
         color: var(--gold);
         font-size: 15px;
         letter-spacing: 1px;
+        vertical-align: middle;
+      }
+
+      .event-kind {
+        display: inline-block;
+        margin: 0 0 8px;
+        padding: 0 8px;
+        border: 1px solid rgba(216, 180, 106, 0.5);
+        border-radius: 999px;
+        background: rgba(216, 180, 106, 0.12);
+        color: var(--gold);
+        font-size: 12px;
+        letter-spacing: 1px;
+        line-height: 22px;
+        vertical-align: middle;
+      }
+
+      .event-kind.is-daily {
+        border-color: rgba(185, 178, 164, 0.4);
+        background: rgba(185, 178, 164, 0.08);
+        color: var(--paper-dim);
       }
 
       .event-panel p {
@@ -693,7 +719,7 @@
             <button id="btn-event" type="button" class="ghost">历练</button>
             <button id="btn-rest" type="button" class="ghost">打坐</button>
           </div>
-          <p id="breakthrough-hint" class="hint hidden"></p>
+          <p id="breakthrough-hint" class="hint"></p>
 
           <div id="event-panel" class="event-panel hidden">
             <h3 id="event-title"></h3>

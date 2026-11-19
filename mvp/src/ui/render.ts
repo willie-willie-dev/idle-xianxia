@@ -270,13 +270,18 @@ export async function bootstrap(): Promise<void> {
     );
   }
 
-  /** 没有破境丹时提示去炼气/筑基事件；持有则藏起。 */
+  /**
+   * 突破提示常驻，不隐藏。
+   * 有破境丹：本次必定成功，并会消耗 1 枚；没有则显示基础成功率（弱化配色）。
+   */
   function renderBreakthroughHint(character: MvpCharacter): void {
     if (holdsPoJing(character)) {
-      breakthroughHint.classList.add('hidden');
-      return;
+      breakthroughHint.textContent = '持有破境丹：本次突破必定成功（将消耗 1 枚）';
+      breakthroughHint.classList.remove('is-weak');
+    } else {
+      breakthroughHint.textContent = '无破境丹：本次突破成功率 80%';
+      breakthroughHint.classList.add('is-weak');
     }
-    breakthroughHint.textContent = '突破需要破境丹：留意炼气/筑基的相关事件';
     breakthroughHint.classList.remove('hidden');
   }
 
@@ -535,9 +540,23 @@ export async function bootstrap(): Promise<void> {
     }
   }
 
+  /** 标题旁的类型标签：奇遇 / 日常。已有则只改文案，避免重复追加。 */
+  function renderEventKind(event: GameEvent): void {
+    const label = event.kind === 'story' ? '奇遇' : '日常';
+    let badge = eventPanel.querySelector<HTMLSpanElement>('span.event-kind');
+    if (badge === null) {
+      badge = make('span', 'event-kind', label);
+      eventTitle.after(badge);
+    } else {
+      badge.textContent = label;
+    }
+    badge.classList.toggle('is-daily', event.kind === 'daily');
+  }
+
   function showEvent(event: GameEvent): void {
     state.pendingEvent = event;
     eventTitle.textContent = `${event.title}（${event.realm}）`;
+    renderEventKind(event);
     eventText.textContent = event.text;
     clear(eventOptions);
     eventOptions.classList.remove('hidden');

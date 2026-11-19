@@ -8,6 +8,7 @@ import {
   STAMINA_INITIAL,
   STAMINA_MAX,
 } from '../src/data/balance.ts';
+import { DAILY_EVENTS } from '../src/data/daily-events.ts';
 import { EVENTS } from '../src/data/events.ts';
 import {
   canAbsorb,
@@ -21,6 +22,17 @@ function eventById(id: string): GameEvent {
   const event = EVENTS.find((entry) => entry.id === id);
   assert.ok(event, `事件池里应有 ${id}`);
   return event;
+}
+
+/** 日常池里第一条会掉指定消耗品的事件，以及对应选项下标。 */
+function dailyGrant(itemId: string): { event: GameEvent; optionIndex: number } {
+  for (const event of DAILY_EVENTS) {
+    const optionIndex = event.options.findIndex((option) =>
+      option.itemGrants?.includes(itemId),
+    );
+    if (optionIndex >= 0) return { event, optionIndex };
+  }
+  assert.fail(`日常事件里应有掉落 ${itemId} 的选项`);
 }
 
 /**
@@ -66,7 +78,7 @@ test('体力纯函数：canAbsorb 边界、不足扣到 0、回复不超上限�
   assert.equal(clampStamina(Number.NaN, STAMINA_MAX), 0);
 });
 
-test('新角色体力满、没有破境保证', async () => {
+test('新角色体力是满的', async () => {
   const app = createMemoryApp();
   const character = await app.create('沈青');
 
@@ -74,7 +86,6 @@ test('新角色体力满、没有破境保证', async () => {
   assert.equal(character.stamina, 100);
   assert.equal(character.staminaMax, STAMINA_MAX);
   assert.equal(character.staminaMax, 100);
-  assert.equal(character.breakthroughGuard, false);
 });
 
 test('无功法吸收：因功法被挡住，体力与天数都不变', async () => {
@@ -141,9 +152,10 @@ test('消耗品：同 id 堆成 2，回气丹恢复 30 并封顶，破境丹不�
   const app = createMemoryApp();
   await app.create('沈青');
 
-  const source = eventById('lianqi-04');
-  await app.resolveEvent(source, 2);
-  const stacked = await app.resolveEvent(source, 2);
+  const source = dailyGrant('huiqi-dan');
+  // 日常每次掉 1 枚；连续结算两次，同 id 堆成 2。
+  await app.resolveEvent(source.event, source.optionIndex);
+  const stacked = await app.resolveEvent(source.event, source.optionIndex);
   const pills = stacked.character.inventory.filter(
     (item) => item.kind === 'consumable' && item.itemId === 'huiqi-dan',
   );

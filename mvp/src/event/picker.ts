@@ -1,15 +1,16 @@
 /**
- * 事件抽取：按境界 + 阶位 + 未完成过滤，再用种子选一条。
+ * 事件抽取：奇遇优先，日常按冷却。
  *
  * 纯函数，保留原有 LCG（`systems/rng.ts`）：同种子同池长结果稳定，
  * 返回的 `nextSeed` 必须由调用方存回角色。
  */
 
+import { DAILY_COOLDOWN_DAYS } from '../data/balance.ts';
 import type { Realm } from '../types.ts';
 import { nextSeed, seedToIndex } from '../systems/rng.ts';
 import type { EventPool } from './pool.ts';
 import { eventPool } from './pool.ts';
-import type { GameEvent, PickEventInput, PickResult } from './types.ts';
+import type { GameEvent, PickResult } from './types.ts';
 
 /** 候选池：同境界、同阶位且不在 `doneIds` 里的事件，保持数据顺序。 */
 export function eligibleEvents(
@@ -24,24 +25,44 @@ export function eligibleEvents(
 /**
  * 抽一条事件。
  *
- * 入参为 `{ realm, stage, doneIds, seed }`。
- * `event === null` 表示本境界本阶位已历练完；此时种子仍然推进，
- * 保证「抽一次 = 消耗一个随机数」的行为稳定。
+ * 入参为 `{ realm, stage, doneIds, dailyDone, day, seed }`。
+ * 先抽本阶位未完成的奇遇；没有再抽冷却已过的日常
+ * （`day - (dailyDone[id] ?? -Infinity) >= DAILY_COOLDOWN_DAYS`）。
+ * 都没有则 `event === null`，种子仍然推进。
  */
 export function pickEvent(
-  input: PickEventInput & { stage: GameEvent['stage'] },
+  input: {
+    realm: Realm;
+    stage: GameEvent['stage'];
+    doneIds: readonly string[];
+    dailyDone: Record<string, number>;
+    day: number;
+    seed: number;
+  },
   pool: EventPool = eventPool,
 ): PickResult {
   const rolled = nextSeed(input.seed);
-  const candidates = eligibleEvents(
-    input.realm,
-    input.stage,
-    input.doneIds ?? [],
-    pool,
-  );
-  if (candidates.length === 0) return { event: null, nextSeed: rolled };
-  return {
-    event: candidates[seedToIndex(rolled, candidates.length)],
-    nextSeed: rolled,
-  };
+  const story = pool
+    .byKind({ realm: input.realm, stage: input.stage, kind: 'story' })
+    .filter((event) => !input.doneIds.includes(event.id));
+  if (story.length > 0) {
+    return {
+      event: story[seedToIndex(rolled, story.length)],
+      nextSeed: rolled,
+    };
+  }
+
+  const daily = pool
+    .byKind({ realm: input.realm, stage: input.stage, kind: 'daily' })
+    .filter(
+      (event) =>
+        input.day - (input.dailyDone[event.id] ?? -Infinity) >= DAILY_COOLDOWN_DAYS,
+    );
+  if (daily.length > 0) {
+    return {
+      event: daily[seedToIndex(rolled, daily.length)],
+      nextSeed: rolled,
+    };
+  }
+  return { event: null, nextSeed: rolled };
 }

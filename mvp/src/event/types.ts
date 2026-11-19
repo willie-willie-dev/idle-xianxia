@@ -25,9 +25,14 @@ export interface EventOption {
   itemGrants?: string[];
 }
 
+/** 事件类别：story = 奇遇（一次性）；daily = 日常（可复用）。 */
+export type EventKind = 'story' | 'daily';
+
 /** 一条事件。 */
 export interface GameEvent {
   id: string;
+  /** story = 奇遇（一次性）；daily = 日常（可复用）。 */
+  kind: EventKind;
   realm: Realm;
   /** 境界内阶位：前期 / 中期 / 后期。 */
   stage: RealmStage;

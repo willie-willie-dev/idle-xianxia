@@ -18,6 +18,10 @@ export interface EventCharacterView {
   stage: GameEvent['stage'];
   rngSeed: number;
   eventState?: { doneIds?: readonly string[] };
+  /** 当前游戏日，日常冷却用。 */
+  time: { day: number };
+  /** 日常事件 id → 上次完成日。 */
+  dailyDone?: Record<string, number>;
 }
 
 /** `next()` 的返回：事件 + 推进后的种子。 */
@@ -34,7 +38,7 @@ export interface EventResolveView {
 
 /** 事件系统服务。 */
 export interface EventSystem {
-  /** 抽一条当前境界与阶位的事件；`event === null` 表示本境界本阶位已历练完。 */
+  /** 抽一条当前境界与阶位的事件；奇遇优先，否则取冷却已过的日常。`event === null` 表示两者都没有。 */
   next(character: EventCharacterView): NextEventResult;
   /** 结算指定事件 + 选项；未知事件 / 越界选项抛错。 */
   resolve(
@@ -51,7 +55,7 @@ export interface EventSystem {
 }
 
 export interface EventSystemDeps {
-  /** 可注入的事件池；缺省用 `data/events.ts` 的默认池。 */
+  /** 可注入的事件池；缺省用合并后的奇遇 + 日常池。 */
   pool?: EventPool;
 }
 
@@ -66,6 +70,8 @@ export function createEventSystem(deps: EventSystemDeps = {}): EventSystem {
           realm: character.realm,
           stage: character.stage,
           doneIds: character.eventState?.doneIds ?? [],
+          dailyDone: character.dailyDone ?? {},
+          day: character.time.day,
           seed: character.rngSeed,
         },
         pool,

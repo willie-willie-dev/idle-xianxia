@@ -8,7 +8,9 @@
 import {
   ABSORB_STAMINA_COST,
   ACTION_DAYS,
+  BREAKTHROUGH_SUCCESS_RATE,
   POJING_ITEM_ID,
+  POJING_SUCCESS_RATE,
   REST_DAYS,
   REST_STAMINA_GAIN,
   assertTechniqueSlot,
@@ -80,11 +82,9 @@ export interface UseItemTurn {
 export interface BreakthroughTurn {
   character: MvpCharacter;
   result: BreakthroughResult;
-  /** 没有破境丹：本次不结算、不写档。 */
-  blocked?: boolean;
 }
 
-/** 一次抽事件的回报。`event === null` 表示本境界本阶位已历练完。 */
+/** 一次抽事件的回报。`event === null` 表示本阶位没有可抽的奇遇，且日常都在冷却中。 */
 export interface DrawEventTurn {
   character: MvpCharacter;
   event: GameEvent | null;
@@ -172,12 +172,11 @@ function consumePoJing(inventory: InventoryItem[]): InventoryItem[] {
   return next;
 }
 
-/** 修为达到阈值、还没到顶阶、且持有破境丹时，才可以点突破。 */
+/** 修为达到阈值、且还没到顶阶时，才可以点突破。 */
 export function canBreakthrough(character: MvpCharacter): boolean {
   return (
     nextStageOf(character.realm, character.stage) !== null &&
-    character.cultivation >= character.nextThreshold &&
-    hasPoJing(character)
+    character.cultivation >= character.nextThreshold
   );
 }
 
@@ -340,36 +339,19 @@ class GameAppImpl implements GameApp {
   }
 
   /**
-   * 尝试突破。没有破境丹则不结算、不写档。
-   * 有丹则无论成败都消耗 1 枚；成功则阶位 +1、修为扣阈值。
+   * 尝试突破。有破境丹则按丹的成功率结算并消耗 1 枚；
+   * 没有则按基础成功率掷骰。无论成败都写回境界、修为与种子。
    */
   async breakthrough(): Promise<BreakthroughTurn> {
     const character = await this.#require();
-    if (!hasPoJing(character)) {
-      return {
-        character,
-        blocked: true,
-        result: {
-          blocked: true,
-          success: false,
-          realm: character.realm,
-          stage: character.stage,
-          cultivation: character.cultivation,
-          cultivationMax: character.cultivationMax,
-          nextThreshold: character.nextThreshold,
-          lost: 0,
-          nextSeed: character.rngSeed,
-        },
-      };
-    }
-
+    const withPill = hasPoJing(character);
     const result = tryBreakthrough(
       {
         cultivation: character.cultivation,
         nextThreshold: character.nextThreshold,
         realm: character.realm,
         stage: character.stage,
-        hasPoJing: true,
+        successRate: withPill ? POJING_SUCCESS_RATE : BREAKTHROUGH_SUCCESS_RATE,
       },
       character.rngSeed,
     );
@@ -379,9 +361,6 @@ class GameAppImpl implements GameApp {
       ACTION_DAYS.breakthrough,
       { kind: 'breakthrough' },
     );
-    const inventory = consumePoJing(
-      Array.isArray(character.inventory) ? character.inventory : [],
-    );
     const updated = await this.#repo.update(character.id, {
       realm: result.realm,
       stage: result.stage,
@@ -390,10 +369,16 @@ class GameAppImpl implements GameApp {
       nextThreshold: result.nextThreshold,
       time: advanced.state,
       rngSeed: result.nextSeed,
-      inventory,
+      ...(withPill
+        ? {
+            inventory: consumePoJing(
+              Array.isArray(character.inventory) ? character.inventory : [],
+            ),
+          }
+        : {}),
     });
     this.#character = updated;
-    return { character: updated, result, blocked: false };
+    return { character: updated, result };
   }
 
   /** 抽一条当前境界、当前阶位的事件；种子推进写回存档。 */
@@ -404,6 +389,8 @@ class GameAppImpl implements GameApp {
       stage: character.stage,
       rngSeed: character.rngSeed,
       eventState: character.eventState,
+      time: character.time,
+      dailyDone: character.dailyDone,
     });
     const updated = await this.#repo.update(character.id, {
       rngSeed: picked.seed,
@@ -421,9 +408,10 @@ class GameAppImpl implements GameApp {
   async resolveEvent(event: GameEvent, optionIndex: number): Promise<EventTurn> {
     const character = await this.#require();
     const outcome = this.#events.resolve(character, event.id, optionIndex);
-    const doneIds = character.eventState.doneIds.includes(event.id)
-      ? character.eventState.doneIds
-      : [...character.eventState.doneIds, event.id];
+    const doneIds =
+      event.kind === 'story' && !character.eventState.doneIds.includes(event.id)
+        ? [...character.eventState.doneIds, event.id]
+        : character.eventState.doneIds;
     const base = Array.isArray(character.plotFlags) ? character.plotFlags : [];
     const flags = Array.isArray(outcome.plotFlags) ? outcome.plotFlags : [];
     const plotFlags = flags.length === 0 ? base : Array.from(new Set([...base, ...flags]));
@@ -487,6 +475,14 @@ class GameAppImpl implements GameApp {
       stamina,
       rngSeed: outcome.nextSeed,
       eventState: { doneIds, count: character.eventState.count + 1 },
+      ...(event.kind === 'daily'
+        ? {
+            dailyDone: {
+              ...(character.dailyDone ?? {}),
+              [event.id]: advanced.state.day,
+            },
+          }
+        : {}),
       plotFlags,
       time: advanced.state,
       inventory,

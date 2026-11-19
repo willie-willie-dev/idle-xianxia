@@ -111,6 +111,8 @@ export interface MvpCharacter {
   stamina: number;
   staminaMax: number;
   eventState: EventState;
+  /** 每个日常事件上次完成时的天数。 */
+  dailyDone?: Record<string, number>;
   /** 剧情标记（R3 的第二类回报），去重累积，写入存档。 */
   plotFlags: string[];
   /** 时间状态（v0.2：day 为最小单位）。 */
@@ -143,14 +145,14 @@ export interface CreateCharacterInput {
   techniques?: (string | null)[];
 }
 
-/** 突破结果（纯函数返回值）。 */
+/** 突破入参（纯函数）。 */
 export interface BreakthroughInput {
   cultivation: number;
   nextThreshold: number;
   realm: Realm;
   stage: RealmStage;
-  /** 是否持有破境丹。没有则本次突破不结算。 */
-  hasPoJing: boolean;
+  /** 本次突破成功率，取值 0~1。 */
+  successRate: number;
 }
 
 export interface BreakthroughResult {
@@ -162,8 +164,6 @@ export interface BreakthroughResult {
   nextThreshold: number;
   /** 失败扣除的修为量，成功时为 0。 */
   lost: number;
-  /** 缺少破境丹时为 true：本次不结算（不扣修为）。 */
-  blocked?: boolean;
   /** 推进后的种子（线性同余），必须存回角色。 */
   nextSeed: number;
 }

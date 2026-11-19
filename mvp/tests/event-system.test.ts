@@ -8,6 +8,7 @@ import {
   REALM_STAGES,
   findTechnique,
 } from '../src/data/balance.ts';
+import { DAILY_EVENTS } from '../src/data/daily-events.ts';
 import { EVENTS } from '../src/data/events.ts';
 import {
   createEventPool,
@@ -21,21 +22,22 @@ function lianqiIds(): string[] {
   return EVENTS.filter((event) => event.realm === '炼气').map((event) => event.id);
 }
 
-test('事件池索引：24 条 / 每境界 8 条 / id 唯一 / 顺序保持', () => {
+test('事件池索引：33 条 / 每境界 11 条 / id 唯一 / 顺序保持', () => {
   const system = createEventSystem();
   const all = system.list();
+  const source = [...EVENTS, ...DAILY_EVENTS];
 
-  assert.equal(all.length, 24);
-  assert.equal(system.pool.size, 24);
+  assert.equal(all.length, 33);
+  assert.equal(system.pool.size, 33);
   assert.deepEqual(
     all.map((event) => event.id),
-    EVENTS.map((event) => event.id),
+    source.map((event) => event.id),
   );
-  assert.equal(new Set(all.map((event) => event.id)).size, 24);
+  assert.equal(new Set(all.map((event) => event.id)).size, 33);
 
   for (const realm of REALMS) {
     const bucket = system.pool.byRealm(realm);
-    assert.equal(bucket.length, 8, `${realm} 应有 8 条`);
+    assert.equal(bucket.length, 11, `${realm} 应有 11 条`);
     assert.ok(bucket.every((event) => event.realm === realm));
   }
 
@@ -80,6 +82,8 @@ test('pickEvent：同种子可复现，返回推进后的 nextSeed', () => {
     realm: '炼气' as const,
     stage: '前期' as const,
     doneIds: [] as string[],
+    dailyDone: {},
+    day: 1,
     seed: 1,
   };
   const a = pickEvent(input);
@@ -100,11 +104,25 @@ test('pickEvent：doneIds 排除，抽空返回 null 且种子仍推进', () => 
   const done = ids.slice(0, -1);
 
   for (const seed of [1, 2, 3, 4, 5]) {
-    const picked = pickEvent({ realm: '炼气', stage, doneIds: done, seed });
+    const picked = pickEvent({
+      realm: '炼气',
+      stage,
+      doneIds: done,
+      dailyDone: {},
+      day: 1,
+      seed,
+    });
     assert.equal(picked.event?.id, ids[ids.length - 1]);
   }
 
-  const empty = pickEvent({ realm: '炼气', stage, doneIds: ids, seed: 3 });
+  const empty = pickEvent({
+    realm: '炼气',
+    stage,
+    doneIds: ids,
+    dailyDone: { 'daily-lianqi-01': 1 },
+    day: 1,
+    seed: 3,
+  });
   assert.equal(empty.event, null);
   assert.equal(empty.nextSeed, nextSeed(3));
 });
@@ -117,6 +135,8 @@ test('createEventSystem.next：接受角色切片，本境界抽完返回 null',
     stage: '前期',
     rngSeed: 1,
     eventState: { doneIds: [] },
+    dailyDone: {},
+    time: { day: 1 },
   });
   assert.equal(picked.event?.realm, '炼气');
   assert.equal(picked.event?.stage, '前期');
@@ -127,12 +147,20 @@ test('createEventSystem.next：接受角色切片，本境界抽完返回 null',
     stage: '前期',
     rngSeed: 1,
     eventState: { doneIds: lianqiIds() },
+    dailyDone: { 'daily-lianqi-01': 1 },
+    time: { day: 1 },
   });
   assert.equal(exhausted.event, null);
   assert.equal(exhausted.seed, nextSeed(1));
 
   // 没有 eventState 也能抽（默认候选全池）
-  const bare = system.next({ realm: '筑基', stage: '前期', rngSeed: 7 });
+  const bare = system.next({
+    realm: '筑基',
+    stage: '前期',
+    rngSeed: 7,
+    dailyDone: {},
+    time: { day: 1 },
+  });
   assert.equal(bare.event?.realm, '筑基');
   assert.equal(bare.event?.stage, '前期');
 });
@@ -242,6 +270,8 @@ test('createEventSystem：可注入自定义池', () => {
       stage: '前期',
       rngSeed: 1,
       eventState: { doneIds: ['lianqi-01'] },
+      dailyDone: {},
+      time: { day: 1 },
     }).event,
     null,
   );
@@ -271,7 +301,14 @@ test('pickEvent：连续抽取不重复，结果 id 不在 doneIds 中', () => {
       (event) => event.realm === realm && event.stage === stage,
     ).map((event) => event.id);
     const doneIds = ids.slice(0, i % (ids.length + 1));
-    const picked = pickEvent({ realm, stage, doneIds, seed: i + 1 });
+    const picked = pickEvent({
+      realm,
+      stage,
+      doneIds,
+      dailyDone: {},
+      day: 1,
+      seed: i + 1,
+    });
     if (picked.event === null) continue;
     assert.equal(doneIds.includes(picked.event.id), false);
     assert.equal(picked.event.realm, realm);
@@ -297,7 +334,14 @@ test('pickEvent：给定境界与阶位只抽该阶事件', () => {
         (event) => event.realm === realm && event.stage === stage,
       ).map((event) => event.id);
       for (let seed = 1; seed <= 50; seed += 1) {
-        const picked = pickEvent({ realm, stage, doneIds: [], seed });
+        const picked = pickEvent({
+          realm,
+          stage,
+          doneIds: [],
+          dailyDone: {},
+          day: 1,
+          seed,
+        });
         assert.notEqual(picked.event, null, `${realm}·${stage} seed=${seed}`);
         assert.equal(picked.event?.realm, realm);
         assert.equal(picked.event?.stage, stage);
@@ -359,4 +403,52 @@ test('lianqi-02 的 index 0 与 1 调用 applyOption，返回的 outcome 不同'
   const first = applyOption({ cultivation: 0, rngSeed: 1 }, event, 0);
   const second = applyOption({ cultivation: 0, rngSeed: 1 }, event, 1);
   assert.notEqual(first.outcome, second.outcome);
+});
+
+test('日常事件可复用：day 1 完成后，day 2 抽不到，day 4 冷却结束可再抽到', () => {
+  const id = 'daily-lianqi-01';
+  const doneIds = EVENTS.filter(
+    (event) => event.realm === '炼气' && event.stage === '前期',
+  ).map((event) => event.id);
+  const base = {
+    realm: '炼气' as const,
+    stage: '前期' as const,
+    doneIds,
+    dailyDone: { [id]: 1 },
+    seed: 1,
+  };
+
+  assert.equal(pickEvent({ ...base, day: 2 }).event, null);
+
+  const ready = pickEvent({ ...base, day: 4 });
+  assert.equal(ready.event?.id, id);
+  assert.equal(ready.event?.kind, 'daily');
+});
+
+test('奇遇优先：story 池还有未完成事件时，抽到的 event.kind 必为 story', () => {
+  for (const realm of REALMS) {
+    for (const stage of REALM_STAGES) {
+      const storyIds = EVENTS.filter(
+        (event) => event.realm === realm && event.stage === stage,
+      ).map((event) => event.id);
+      assert.ok(storyIds.length > 0, `${realm}·${stage} 应有奇遇`);
+      for (const doneIds of [[], storyIds.slice(0, -1)] as const) {
+        for (const seed of [1, 8, 42]) {
+          const picked = pickEvent({
+            realm,
+            stage,
+            doneIds,
+            dailyDone: {},
+            day: 1,
+            seed,
+          });
+          assert.equal(
+            picked.event?.kind,
+            'story',
+            `${realm}·${stage} seed=${seed}`,
+          );
+        }
+      }
+    }
+  }
 });

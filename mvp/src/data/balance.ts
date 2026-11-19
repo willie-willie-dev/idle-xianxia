@@ -57,6 +57,15 @@ export const CULTIVATION_MAX_FACTOR = 4;
 /** 突破失败损耗比例（10–30% 区间取中点，见 R4）。 */
 export const FAIL_LOSS_RATE = 0.2;
 
+/** 无破境丹时的基础突破成功率。 */
+export const BREAKTHROUGH_SUCCESS_RATE = 0.8;
+
+/** 使用破境丹后的突破成功率。 */
+export const POJING_SUCCESS_RATE = 1;
+
+/** 同一日常事件再次出现前的冷却天数。 */
+export const DAILY_COOLDOWN_DAYS = 3;
+
 /** 灵根合计目标值。 */
 export const ROOTS_SUM_TARGET = 100;
 

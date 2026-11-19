@@ -70,7 +70,7 @@ test('突破逐阶推进：0 → 1 → 2 → 3 连续三次', () => {
     // 每次补足到阈值（真实游戏靠吸收攒，这里直接置满）
     cultivation = Math.max(cultivation, nextThreshold);
     const result = tryBreakthrough(
-      { cultivation, nextThreshold, realm, stage },
+      { cultivation, nextThreshold, realm, stage, successRate: 1 },
       WIN_SEED,
     );
     assert.equal(result.success, true, `第 ${i + 1} 次突破应成功`);
@@ -91,7 +91,7 @@ test('突破逐阶推进：0 → 1 → 2 → 3 连续三次', () => {
 
 test('跨境界：炼气·后期 → 筑基·前期，扣阈值并重算上限', () => {
   const result = tryBreakthrough(
-    { cultivation: 500, nextThreshold: 430, realm: '炼气', stage: '后期' },
+    { cultivation: 500, nextThreshold: 430, realm: '炼气', stage: '后期', successRate: 1 },
     WIN_SEED,
   );
 

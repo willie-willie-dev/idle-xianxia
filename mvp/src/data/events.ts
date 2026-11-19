@@ -20,6 +20,7 @@ export const EVENTS: readonly GameEvent[] = [
   {
     id: 'lianqi-01',
     realm: '炼气',
+    kind: 'story',
     stage: '前期',
     title: '山道拾遗',
     text: '山道拐弯处，你踢到一枚玉简，边角被雨水浸得发亮。玉简贴掌时微微发烫，似在等你探入神识。',
@@ -53,6 +54,7 @@ export const EVENTS: readonly GameEvent[] = [
   {
     id: 'lianqi-02',
     realm: '炼气',
+    kind: 'story',
     stage: '前期',
     title: '雨夜借宿',
     text: '破庙檐下雨声连成一片，一个老道把半块冷饼掰成两半，递了半块过来。',
@@ -61,7 +63,6 @@ export const EVENTS: readonly GameEvent[] = [
         text: '把自己的干粮也分他一半',
         cultivationGain: 6,
         plotFlag: '结善缘',
-        itemGrants: ['zhixue-cao'],
         outcome:
           '老道接过干粮，没道谢，只把火拨得更旺。天亮时他先走了，灰烬里留下半张饼和一枚磨得发亮的小木牌。',
       },
@@ -76,6 +77,7 @@ export const EVENTS: readonly GameEvent[] = [
   {
     id: 'lianqi-03',
     realm: '炼气',
+    kind: 'story',
     stage: '前期',
     title: '溪畔灵鲤',
     text: '浅滩的水退了下去，一条巴掌大的灵鲤搁在卵石间，鳞片还泛着青光。',
@@ -107,6 +109,7 @@ export const EVENTS: readonly GameEvent[] = [
   {
     id: 'lianqi-04',
     realm: '炼气',
+    kind: 'story',
     stage: '中期',
     title: '丹房门外',
     text: '外门弟子堵在丹房门口，说你这个月的丹药该让给他，一只手始终按在剑柄上。',
@@ -129,7 +132,6 @@ export const EVENTS: readonly GameEvent[] = [
         text: '让出丹药，换他一枚旧符',
         cultivationGain: 9,
         plotFlag: '通人情',
-        itemGrants: ['huiqi-dan'],
         outcome:
           '你把丹药递过去，伸手要他腰间那枚边角磨白的旧符。他愣了愣，还是解下来换给你，符纸旧，上面的灵纹却还温着。他离开时没再按剑，经过你身边，脚步放轻了一点。',
       },
@@ -138,6 +140,7 @@ export const EVENTS: readonly GameEvent[] = [
   {
     id: 'lianqi-05',
     realm: '炼气',
+    kind: 'story',
     stage: '后期',
     title: '月下吐纳',
     text: '今夜月华极盛，院里石阶像积了一层薄霜，连呼吸都带着凉意。',
@@ -167,6 +170,7 @@ export const EVENTS: readonly GameEvent[] = [
   {
     id: 'lianqi-06',
     realm: '炼气',
+    kind: 'story',
     stage: '中期',
     title: '药圃失窃',
     text: '夜里巡圃，你撞见有人正把灵草往怀里塞。那人回头，脸白得像纸。',
@@ -196,6 +200,7 @@ export const EVENTS: readonly GameEvent[] = [
   {
     id: 'lianqi-07',
     realm: '炼气',
+    kind: 'story',
     stage: '后期',
     title: '崖边试剑石',
     text: '崖边立着一块试剑石，石面上被前人削出一道深痕，痕里积着雨水。',
@@ -227,6 +232,7 @@ export const EVENTS: readonly GameEvent[] = [
   {
     id: 'lianqi-08',
     realm: '炼气',
+    kind: 'story',
     stage: '中期',
     title: '集市旧书',
     text: '旧书摊上压着一本残破游记，前几页已被人撕去，剩下的字迹却极有风骨。',
@@ -258,6 +264,7 @@ export const EVENTS: readonly GameEvent[] = [
   {
     id: 'zhuji-01',
     realm: '筑基',
+    kind: 'story',
     stage: '前期',
     title: '洞府灵脉',
     text: '新开的洞府里，灵脉在石壁下低鸣，像有活物在土里翻身。',
@@ -267,7 +274,6 @@ export const EVENTS: readonly GameEvent[] = [
         text: '布一座聚灵阵，就此闭关',
         cultivationGain: 15,
         grants: ['liehuo'],
-        itemGrants: ['juyuan-dan'],
         outcome:
           '你在石壁下布开聚灵阵，封了洞门，任那条灵脉的热一寸寸挤进阵里。闭关的日子里，火意从丹田里自己烧起来，一段驭火的口诀在耳鸣里一句句清楚。出关时洞壁都被烘得发干，你指尖还留着烫，那套火法却已经能随手唤起。',
       },
@@ -290,6 +296,7 @@ export const EVENTS: readonly GameEvent[] = [
   {
     id: 'zhuji-02',
     realm: '筑基',
+    kind: 'story',
     stage: '中期',
     title: '旧友提酒来访',
     text: '当年同门已结金丹，提着两坛酒站在洞府外，笑你还在筑基。',
@@ -313,6 +320,7 @@ export const EVENTS: readonly GameEvent[] = [
   {
     id: 'zhuji-03',
     realm: '筑基',
+    kind: 'story',
     stage: '中期',
     title: '妖兽袭山',
     text: '一头二阶妖狼撞破山门，山下的药农正抱着孩子往山上跑。',
@@ -337,6 +345,7 @@ export const EVENTS: readonly GameEvent[] = [
   {
     id: 'zhuji-04',
     realm: '筑基',
+    kind: 'story',
     stage: '中期',
     title: '丹炉炸响',
     text: '炉火忽然失控，炉壁上的雷纹一寸寸亮起，丹房里已经站不住人。',
@@ -367,6 +376,7 @@ export const EVENTS: readonly GameEvent[] = [
   {
     id: 'zhuji-05',
     realm: '筑基',
+    kind: 'story',
     stage: '后期',
     title: '荒原剑冢',
     text: '荒原上有座无名剑冢，几十柄断剑斜插在土里，风过时却有铮铮之声。',
@@ -375,7 +385,6 @@ export const EVENTS: readonly GameEvent[] = [
         text: '整衣拜上一拜',
         cultivationGain: 8,
         plotFlag: '敬剑冢',
-        itemGrants: ['zhixue-cao'],
         outcome:
           '你整了整衣襟，在剑冢前拜下去。风过断剑，铮铮忽然齐了一声，像有人在土下应你这一拜。你起身时膝上全是干土，剑都还插在原处，只有最深那柄的剑穗无风自颤，随即又静了。',
       },
@@ -392,6 +401,7 @@ export const EVENTS: readonly GameEvent[] = [
   {
     id: 'zhuji-06',
     realm: '筑基',
+    kind: 'story',
     stage: '中期',
     title: '渡口论道三日',
     text: '一位云游道人坐在渡口石上，说愿与你论道三日，输了的人请酒。',
@@ -415,7 +425,6 @@ export const EVENTS: readonly GameEvent[] = [
       {
         text: '借故离席，回去炼丹',
         cultivationGain: 7,
-        itemGrants: ['huiqi-dan'],
         outcome:
           '你找了个炼丹的借口起身，他看了你一眼，没有留。回到丹房，炉火按离开前的火候续上，渡口那些话你一句没听完。他后来走没走你不知道，炉里那炉丹倒按你自己的火候成了。',
       },
@@ -424,6 +433,7 @@ export const EVENTS: readonly GameEvent[] = [
   {
     id: 'zhuji-07',
     realm: '筑基',
+    kind: 'story',
     stage: '前期',
     title: '灵田将枯',
     text: '药圃的土裂了缝，几株养了三年的灵草开始打卷。',
@@ -453,6 +463,7 @@ export const EVENTS: readonly GameEvent[] = [
   {
     id: 'zhuji-08',
     realm: '筑基',
+    kind: 'story',
     stage: '后期',
     title: '雷夜闭关',
     text: '窗外雷声滚过，一层压着一层。你第一次觉得那声音离自己这么近。',
@@ -469,7 +480,7 @@ export const EVENTS: readonly GameEvent[] = [
       {
         text: '收心守一，把雷声关在门外',
         cultivationGain: 10,
-        itemGrants: ['juyuan-dan', 'pojing-dan'],
+        itemGrants: ['pojing-dan'],
         outcome:
           '你把门掩上，坐回原处，把心收在一处，雷声就隔在门板外。雷在屋上滚了很久，门缝里只漏进一点白光，没有一道落进屋里。雷停之后你推门，门槛外的石阶被劈黑了一块，你身上干干净净，什么也没沾上。',
       },
@@ -480,6 +491,7 @@ export const EVENTS: readonly GameEvent[] = [
   {
     id: 'jindan-01',
     realm: '金丹',
+    kind: 'story',
     stage: '前期',
     title: '金丹初转',
     text: '丹田里那颗金丹缓缓转了一圈，整座洞府的灵气都跟着晃了晃。',
@@ -513,6 +525,7 @@ export const EVENTS: readonly GameEvent[] = [
   {
     id: 'jindan-02',
     realm: '金丹',
+    kind: 'story',
     stage: '前期',
     title: '寒梅素笺',
     text: '一封素笺压在洞府石桌上，墨迹还新，落款只画了一枝寒梅。',
@@ -536,6 +549,7 @@ export const EVENTS: readonly GameEvent[] = [
   {
     id: 'jindan-03',
     realm: '金丹',
+    kind: 'story',
     stage: '后期',
     title: '天雷试探',
     text: '云层压得极低，第一道雷光在云里游走，迟迟不肯落下，像在称你的斤两。',
@@ -566,6 +580,7 @@ export const EVENTS: readonly GameEvent[] = [
   {
     id: 'jindan-04',
     realm: '金丹',
+    kind: 'story',
     stage: '中期',
     title: '三宗会盟',
     text: '请柬送到洞府，落款是三个你都不熟的道统，日子定在下月初三。',
@@ -590,6 +605,7 @@ export const EVENTS: readonly GameEvent[] = [
   {
     id: 'jindan-05',
     realm: '金丹',
+    kind: 'story',
     stage: '中期',
     title: '门外长跪',
     text: '一个炼气小童在洞府外长跪不起，说愿拜你为师，膝下的石板已经洇湿。',
@@ -613,6 +629,7 @@ export const EVENTS: readonly GameEvent[] = [
   {
     id: 'jindan-06',
     realm: '金丹',
+    kind: 'story',
     stage: '后期',
     title: '旧剑夜鸣',
     text: '剑冢里那柄残剑今夜自己响了，声如远钟，一声一声敲在你的识海上。',
@@ -637,6 +654,7 @@ export const EVENTS: readonly GameEvent[] = [
   {
     id: 'jindan-07',
     realm: '金丹',
+    kind: 'story',
     stage: '后期',
     title: '心境失守',
     text: '闭关第七日，妄念一间间推开你识海里的门，每一间里都坐着一个你。',
@@ -670,6 +688,7 @@ export const EVENTS: readonly GameEvent[] = [
   {
     id: 'jindan-08',
     realm: '金丹',
+    kind: 'story',
     stage: '后期',
     title: '星图缺笔',
     text: '星图上有一块空白，位置正对着你洞府上方，那空白处连墨都没有。',

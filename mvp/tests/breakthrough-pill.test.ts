@@ -2,12 +2,14 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { canBreakthrough, createMemoryApp } from '../src/app.ts';
-import { FAIL_LOSS_RATE, POJING_ITEM_ID } from '../src/data/balance.ts';
+import { BREAKTHROUGH_SUCCESS_RATE, POJING_ITEM_ID } from '../src/data/balance.ts';
 import { nextSeed, seedToUnit } from '../src/systems/rng.ts';
 import type { MvpCharacter } from '../src/types.ts';
 
-/** seed=3027450565 → 下一枚 roll ≈ 0.0505，低于失败线。 */
-const LOSE_SEED = 3027450565;
+/** seed=1 → 下一枚 roll ≈ 0.2365 < 0.8，无丹也会成功。 */
+const WIN_SEED = 1;
+/** seed=1456 → 下一枚 roll ≈ 0.8003 >= 0.8，无丹失败。 */
+const LOSE_SEED = 1456;
 
 function poJingCount(character: MvpCharacter): number {
   let total = 0;
@@ -30,58 +32,71 @@ function grantPoJing(character: MvpCharacter, count: number): void {
   });
 }
 
-test('没有破境丹：不能突破，修为与阶位不变', async () => {
+test('没有破境丹：修为足够就可以突破', async () => {
   const app = createMemoryApp();
   const created = await app.create('沈青');
 
+  assert.equal(poJingCount(created), 0);
   assert.equal(canBreakthrough(created), false);
 
-  const turn = await app.breakthrough();
-  assert.equal(turn.blocked, true);
-  assert.equal(turn.character.cultivation, created.cultivation);
-  assert.equal(turn.character.realm, created.realm);
-  assert.equal(turn.character.stage, created.stage);
-});
-
-test('持有 1 枚破境丹且修为足够：可以突破，并消耗 1 枚', async () => {
-  const app = createMemoryApp();
-  const created = await app.create('沈青');
-  grantPoJing(created, 1);
   created.cultivation = created.nextThreshold;
-
+  created.rngSeed = WIN_SEED;
   assert.equal(canBreakthrough(created), true);
-  assert.equal(poJingCount(created), 1);
 
   const turn = await app.breakthrough();
+  assert.equal(turn.result.success, true);
+  assert.equal(turn.character.realm, '炼气');
+  assert.equal(turn.character.stage, '中期');
+  assert.equal(turn.character.cultivation, 0);
   assert.equal(poJingCount(turn.character), 0);
 });
 
-test('突破失败也消耗 1 枚破境丹', async () => {
+test('持有破境丹：突破必定成功，并消耗 1 枚', async () => {
   const app = createMemoryApp();
   const created = await app.create('沈青');
   grantPoJing(created, 1);
   created.cultivation = created.nextThreshold;
   created.rngSeed = LOSE_SEED;
 
-  assert.ok(seedToUnit(nextSeed(LOSE_SEED)) < FAIL_LOSS_RATE);
+  assert.ok(seedToUnit(nextSeed(LOSE_SEED)) >= BREAKTHROUGH_SUCCESS_RATE);
+  assert.equal(canBreakthrough(created), true);
   assert.equal(poJingCount(created), 1);
 
   const turn = await app.breakthrough();
-  assert.equal(turn.result.success, false);
-  assert.equal(turn.character.realm, created.realm);
-  assert.equal(turn.character.stage, '前期');
+  assert.equal(turn.result.success, true);
+  assert.equal(turn.character.realm, '炼气');
+  assert.equal(turn.character.stage, '中期');
   assert.equal(poJingCount(turn.character), 0);
 });
 
-test('破境丹 count=2：连续突破两次后耗尽', async () => {
+test('没有破境丹且掷骰失败：突破失败，不扣破境丹', async () => {
+  const app = createMemoryApp();
+  const created = await app.create('沈青');
+  created.cultivation = created.nextThreshold;
+  created.rngSeed = LOSE_SEED;
+
+  assert.equal(poJingCount(created), 0);
+  assert.ok(seedToUnit(nextSeed(LOSE_SEED)) >= BREAKTHROUGH_SUCCESS_RATE);
+
+  const turn = await app.breakthrough();
+  assert.equal(turn.result.success, false);
+  assert.equal(turn.character.realm, '炼气');
+  assert.equal(turn.character.stage, '前期');
+  assert.equal(turn.result.lost, 20);
+  assert.equal(turn.character.cultivation, created.nextThreshold - 20);
+  assert.equal(poJingCount(turn.character), 0);
+});
+
+test('破境丹 count=2：连续两次突破各消耗 1 枚', async () => {
   const app = createMemoryApp();
   const created = await app.create('沈青');
   grantPoJing(created, 2);
   created.cultivation = created.nextThreshold;
+  created.rngSeed = LOSE_SEED;
   assert.equal(poJingCount(created), 2);
 
   const first = await app.breakthrough();
-  assert.equal(first.blocked, false);
+  assert.equal(first.result.success, true);
   assert.equal(poJingCount(first.character), 1);
 
   if (first.character.cultivation < first.character.nextThreshold) {
@@ -89,6 +104,6 @@ test('破境丹 count=2：连续突破两次后耗尽', async () => {
   }
 
   const second = await app.breakthrough();
-  assert.equal(second.blocked, false);
+  assert.equal(second.result.success, true);
   assert.equal(poJingCount(second.character), 0);
 });

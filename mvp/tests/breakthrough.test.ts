@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import {
+  BREAKTHROUGH_SUCCESS_RATE,
   CULTIVATION_MAX_FACTOR,
-  FAIL_LOSS_RATE,
   STAGE_TABLE,
   cultivationMaxOf,
   nextRealm,
@@ -15,23 +15,29 @@ import {
 import { breakthroughLoss, tryBreakthrough } from '../src/systems/breakthrough.ts';
 import { nextSeed, seedToUnit } from '../src/systems/rng.ts';
 
-/** 已验算的种子：seed=1 → 下一枚 1015568748（roll ≈ 0.2365，成功）。 */
+/** 已验算的种子：seed=1 → 下一枚 1015568748（roll ≈ 0.2365 < 0.8，成功）。 */
 const WIN_SEED = 1;
 const WIN_NEXT_SEED = 1015568748;
-/** seed=3027450565 → 下一枚 217083232（roll ≈ 0.0505，失败）。 */
-const LOSE_SEED = 3027450565;
-const LOSE_NEXT_SEED = 217083232;
+/** seed=1456 → 下一枚 3437452623（roll ≈ 0.8003 >= 0.8，失败）。 */
+const LOSE_SEED = 1456;
+const LOSE_NEXT_SEED = 3437452623;
 
 test('种子确实落在预期区间（防止常量漂移）', () => {
   assert.equal(nextSeed(WIN_SEED), WIN_NEXT_SEED);
   assert.equal(nextSeed(LOSE_SEED), LOSE_NEXT_SEED);
-  assert.ok(seedToUnit(WIN_NEXT_SEED) >= FAIL_LOSS_RATE);
-  assert.ok(seedToUnit(LOSE_NEXT_SEED) < FAIL_LOSS_RATE);
+  assert.ok(seedToUnit(WIN_NEXT_SEED) < BREAKTHROUGH_SUCCESS_RATE);
+  assert.ok(seedToUnit(LOSE_NEXT_SEED) >= BREAKTHROUGH_SUCCESS_RATE);
 });
 
 test('突破成功：炼气·前期 → 炼气·中期，修为扣阈值、阈值与上限重算', () => {
   const result = tryBreakthrough(
-    { cultivation: 150, nextThreshold: 100, realm: '炼气', stage: '前期' },
+    {
+      cultivation: 150,
+      nextThreshold: 100,
+      realm: '炼气',
+      stage: '前期',
+      successRate: 1,
+    },
     WIN_SEED,
   );
 
@@ -47,7 +53,13 @@ test('突破成功：炼气·前期 → 炼气·中期，修为扣阈值、阈�
 
 test('突破成功：修为刚好等于阈值时清零', () => {
   const result = tryBreakthrough(
-    { cultivation: 100, nextThreshold: 100, realm: '炼气', stage: '前期' },
+    {
+      cultivation: 100,
+      nextThreshold: 100,
+      realm: '炼气',
+      stage: '前期',
+      successRate: 1,
+    },
     WIN_SEED,
   );
   assert.equal(result.success, true);
@@ -58,7 +70,13 @@ test('突破成功：修为刚好等于阈值时清零', () => {
 
 test('突破成功：筑基·后期 → 金丹·前期，阈值递推一次到位', () => {
   const result = tryBreakthrough(
-    { cultivation: 1700, nextThreshold: 1600, realm: '筑基', stage: '后期' },
+    {
+      cultivation: 1700,
+      nextThreshold: 1600,
+      realm: '筑基',
+      stage: '后期',
+      successRate: 1,
+    },
     WIN_SEED,
   );
   assert.equal(result.success, true);
@@ -72,7 +90,13 @@ test('突破成功：筑基·后期 → 金丹·前期，阈值递推一次到�
 
 test('突破失败：扣 20%，阶位不变、阈值不变、种子推进', () => {
   const result = tryBreakthrough(
-    { cultivation: 100, nextThreshold: 100, realm: '炼气', stage: '前期' },
+    {
+      cultivation: 100,
+      nextThreshold: 100,
+      realm: '炼气',
+      stage: '前期',
+      successRate: 0.8,
+    },
     LOSE_SEED,
   );
 
@@ -91,7 +115,13 @@ test('突破失败：扣 20%，阶位不变、阈值不变、种子推进', () =
 
 test('突破失败：修为不足 1 时不扣、不为负', () => {
   const result = tryBreakthrough(
-    { cultivation: 3, nextThreshold: 100, realm: '炼气', stage: '前期' },
+    {
+      cultivation: 3,
+      nextThreshold: 100,
+      realm: '炼气',
+      stage: '前期',
+      successRate: 0.8,
+    },
     LOSE_SEED,
   );
   assert.equal(result.success, false);
@@ -112,7 +142,13 @@ test('突破失败：扣减下限为 0，任何输入都不会得到负修为', 
 
 test('金丹·后期是顶阶：再点突破一律失败且保持原状', () => {
   const result = tryBreakthrough(
-    { cultivation: 12000, nextThreshold: 3200, realm: '金丹', stage: '后期' },
+    {
+      cultivation: 12000,
+      nextThreshold: 3200,
+      realm: '金丹',
+      stage: '后期',
+      successRate: 1,
+    },
     WIN_SEED,
   );
   assert.equal(result.success, false);
@@ -130,7 +166,13 @@ test('金丹·后期是顶阶：再点突破一律失败且保持原状', () => 
 
 test('修为不足阈值时：失败但不扣修为（防御分支）', () => {
   const result = tryBreakthrough(
-    { cultivation: 30, nextThreshold: 100, realm: '炼气', stage: '前期' },
+    {
+      cultivation: 30,
+      nextThreshold: 100,
+      realm: '炼气',
+      stage: '前期',
+      successRate: 1,
+    },
     WIN_SEED,
   );
   assert.equal(result.success, false);
@@ -146,6 +188,7 @@ test('同输入 + 同种子 = 同结果（可复现）', () => {
     nextThreshold: 100,
     realm: '炼气' as const,
     stage: '前期' as const,
+    successRate: 1,
   };
   assert.deepEqual(tryBreakthrough(input, WIN_SEED), tryBreakthrough(input, WIN_SEED));
   assert.deepEqual(tryBreakthrough(input, LOSE_SEED), tryBreakthrough(input, LOSE_SEED));
