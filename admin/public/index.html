@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>登仙 · Admin</title>
+  <base href="/admin/">
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <div class="app">
+    <aside id="sidebar"></aside>
+    <main>
+      <header id="topbar"></header>
+      <div id="build-panel" class="panel" hidden></div>
+      <div id="view"></div>
+    </main>
+  </div>
+  <dialog id="lightbox">
+    <form method="dialog">
+      <button type="submit">关闭</button>
+    </form>
+    <img id="lightbox-img" alt="">
+    <p id="lightbox-cap"></p>
+  </dialog>
+  <div id="toast" role="status"></div>
+  <script src="./app.js"></script>
+</body>
+</html>

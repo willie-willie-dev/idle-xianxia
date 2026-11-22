@@ -1,0 +1,15 @@
+# ~/.config/systemd/user/dengxian.service
+[Unit]
+Description=Dengxian (game + admin, single port 3210)
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/lovecactus/projects/idle-xianxia
+ExecStart=/bin/bash admin/run.sh --no-build
+Restart=always
+RestartSec=3
+Environment=PORT=3210
+
+[Install]
+WantedBy=default.target
